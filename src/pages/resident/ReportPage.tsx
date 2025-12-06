@@ -36,6 +36,14 @@ const ReportPage: React.FC = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    // Validate that reportType is selected
+    if (!reportType) {
+      setAlertHeader('Validation Error');
+      setAlertMessage('Please select a report type first.');
+      setShowAlert(true);
+      return;
+    }
+    
     if (reportType === 'select' && !selectedOption) {
       setAlertHeader('Validation Error');
       setAlertMessage('Please select an issue.');
@@ -80,12 +88,12 @@ const ReportPage: React.FC = () => {
       const account = await databaseService.getAccountById(userId);
       const userEmail = account?.email || '';
 
-      // Create report
+      // Create report (reportType is guaranteed to be non-null at this point due to validation above)
       await databaseService.createReport({
         userId: userId,
         userName: user.name,
         userEmail: userEmail,
-        reportType: reportType!,
+        reportType: reportType, // No need for non-null assertion after validation
         issue: reportType === 'select' ? selectedOption : customReport.trim(),
         barangay: barangay.trim(),
         truckNo: truckNo.trim(),

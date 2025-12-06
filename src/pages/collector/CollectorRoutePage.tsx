@@ -33,7 +33,7 @@ const isValidCoordinate = (lat: number, lng: number): boolean => {
 
 const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   const mapRef = useRef<L.Map | null>(null);
-  const [truckMarker, setTruckMarker] = useState<L.Marker | null>(null);
+  const truckMarkerRef = useRef<L.Marker | null>(null);
   const [truckFullAlert, setTruckFullAlert] = useState(false);
   const watchIdRef = useRef<number | null>(null);
 
@@ -92,13 +92,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
         
         const latlng: L.LatLngExpression = [lat, lng];
         
-        if (truckMarker) {
+        if (truckMarkerRef.current) {
           // Update existing marker position
-          truckMarker.setLatLng(latlng);
+          truckMarkerRef.current.setLatLng(latlng);
+          
+          // Update popup with new coordinates
+          truckMarkerRef.current.bindPopup(`
+            <div style="text-align: center; padding: 0.5rem;">
+              <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
+              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+              <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
+              <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
+                Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+              </div>
+            </div>
+          `);
         } else {
           // Create new marker if it doesn't exist
           const marker = L.marker(latlng, { icon: whiteTruckIcon }).addTo(mapRef.current);
-          setTruckMarker(marker);
+          truckMarkerRef.current = marker;
           
           // Add click popup to truck marker
           marker.bindPopup(`
@@ -129,7 +141,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
               if (!mapRef.current) return;
               mapRef.current.setView(donPedro, 16);
               const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
-              setTruckMarker(marker);
+              truckMarkerRef.current = marker;
               marker.bindPopup(`
                 <div style="text-align: center; padding: 0.5rem;">
                   <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
@@ -179,7 +191,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
             if (!mapRef.current) return;
             mapRef.current.setView(donPedro, 16);
             const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
-            setTruckMarker(marker);
+            truckMarkerRef.current = marker;
             marker.bindPopup(`
               <div style="text-align: center; padding: 0.5rem;">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
@@ -197,7 +209,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
         if (!mapRef.current) return;
         mapRef.current.setView(donPedro, 16);
         const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
-        setTruckMarker(marker);
+        truckMarkerRef.current = marker;
         marker.bindPopup(`
           <div style="text-align: center; padding: 0.5rem;">
             <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
@@ -219,8 +231,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   };
 
   const onTruckFullConfirm = async () => {
-    if (truckMarker) {
-      truckMarker.setIcon(redTruckIcon);
+    if (truckMarkerRef.current) {
+      truckMarkerRef.current.setIcon(redTruckIcon);
     }
     if (onBack) {
       onBack();
@@ -228,23 +240,24 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   };
 
   const onTruckEmpty = async () => {
-    if (truckMarker) {
-      truckMarker.setIcon(whiteTruckIcon);
+    if (truckMarkerRef.current) {
+      truckMarkerRef.current.setIcon(whiteTruckIcon);
     }
   };
 
   useEffect(() => {
     // Cleanup marker and stop GPS tracking if the component unmounts
     return () => {
-      if (truckMarker) {
-        truckMarker.remove();
+      if (truckMarkerRef.current) {
+        truckMarkerRef.current.remove();
+        truckMarkerRef.current = null;
       }
       if (watchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
     };
-  }, [truckMarker]);
+  }, []);
 
   const AnyMapView = MapView as React.ComponentType<any>;
 

@@ -29,12 +29,20 @@ class DatabaseService {
 
       request.onerror = () => {
         console.error('Database initialization failed:', request.error);
+        this.initPromise = null; // Clear cached promise to allow retries
         reject(request.error);
       };
 
       request.onsuccess = () => {
         this.db = request.result;
+        this.initPromise = null; // Clear cached promise after successful initialization
         resolve();
+      };
+
+      request.onblocked = () => {
+        console.warn('Database upgrade blocked. Please close other tabs with this app open.');
+        // Note: We don't clear initPromise here as the request is still pending
+        // The user needs to close other tabs for the upgrade to proceed
       };
 
       request.onupgradeneeded = (event) => {
