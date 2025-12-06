@@ -1,16 +1,81 @@
 // src/pages/SignUpPage.tsx
 
-import React from 'react';
-import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText, IonSelect, IonSelectOption } from '@ionic/react';
+import React, { useState } from 'react';
+import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText, IonSelect, IonSelectOption, IonAlert } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
+import { databaseService } from '../services/database';
+import { UserRole } from '../models/types';
 
 const SignUpPage: React.FC = () => {
   const history = useHistory();
+  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [role, setRole] = useState<UserRole>('resident');
+  const [name, setName] = useState('');
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: hook to real backend later
-    history.push('/login');
+    setIsLoading(true);
+
+    // Validation
+    if (!email || !username || !password || !confirmPassword || !role) {
+      setAlertMessage('Please fill in all fields');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    if (password !== confirmPassword) {
+      setAlertMessage('Passwords do not match');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    if (password.length < 4) {
+      setAlertMessage('Password must be at least 4 characters long');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setAlertMessage('Please enter a valid email address');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Create account in local database
+      await databaseService.createAccount({
+        email: email.toLowerCase().trim(),
+        username: username.trim(),
+        password, // In production, hash this password
+        name: name.trim() || username.trim(),
+        role,
+      });
+
+      // Success - redirect to login
+      setAlertMessage('Account created successfully! Please log in.');
+      setShowAlert(true);
+      
+      // Redirect after alert is dismissed
+      setTimeout(() => {
+        history.push('/login');
+      }, 1500);
+    } catch (error: any) {
+      setAlertMessage(error.message || 'Failed to create account. Please try again.');
+      setShowAlert(true);
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -85,8 +150,40 @@ const SignUpPage: React.FC = () => {
                   lines="none"
                   style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                 >
+                  <IonLabel position="stacked">Full Name</IonLabel>
+                  <IonInput 
+                    required 
+                    value={name} 
+                    onIonInput={(e) => setName(e.detail.value!)} 
+                    placeholder="Your name" 
+                  />
+                </IonItem>
+
+                <IonItem
+                  lines="none"
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                >
+                  <IonLabel position="stacked">Username</IonLabel>
+                  <IonInput 
+                    required 
+                    value={username} 
+                    onIonInput={(e) => setUsername(e.detail.value!)} 
+                    placeholder="Choose a username" 
+                  />
+                </IonItem>
+
+                <IonItem
+                  lines="none"
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                >
                   <IonLabel position="stacked">Email</IonLabel>
-                  <IonInput required type="email" placeholder="you@example.com" />
+                  <IonInput 
+                    required 
+                    type="email" 
+                    value={email} 
+                    onIonInput={(e) => setEmail(e.detail.value!)} 
+                    placeholder="you@example.com" 
+                  />
                 </IonItem>
 
                 <IonItem
@@ -94,7 +191,13 @@ const SignUpPage: React.FC = () => {
                   style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                 >
                   <IonLabel position="stacked">Password</IonLabel>
-                  <IonInput required type="password" />
+                  <IonInput 
+                    required 
+                    type="password" 
+                    value={password} 
+                    onIonInput={(e) => setPassword(e.detail.value!)} 
+                    placeholder="At least 4 characters"
+                  />
                 </IonItem>
 
                 <IonItem
@@ -102,18 +205,25 @@ const SignUpPage: React.FC = () => {
                   style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                 >
                   <IonLabel position="stacked">Confirm Password</IonLabel>
-                  <IonInput required type="password" />
+                  <IonInput 
+                    required 
+                    type="password" 
+                    value={confirmPassword} 
+                    onIonInput={(e) => setConfirmPassword(e.detail.value!)} 
+                  />
                 </IonItem>
 
                 <IonItem
                   lines="none"
                   style={{ marginBottom: '1.1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                 >
-                  <IonLabel position="stacked">Select an Account</IonLabel>
+                  <IonLabel position="stacked">Select Account Type</IonLabel>
                   <IonSelect
                     interface="popover"
                     placeholder="Choose role"
                     required
+                    value={role}
+                    onIonChange={(e) => setRole(e.detail.value)}
                     style={{ paddingLeft: 0 }}
                   >
                     <IonSelectOption value="resident">Resident</IonSelectOption>
@@ -125,6 +235,7 @@ const SignUpPage: React.FC = () => {
                   type="submit"
                   expand="block"
                   shape="round"
+                  disabled={isLoading}
                   style={{
                     '--background': '#16a34a',
                     '--background-activated': '#15803d',
@@ -132,7 +243,7 @@ const SignUpPage: React.FC = () => {
                     marginBottom: '0.75rem',
                   }}
                 >
-                  Sign Up
+                  {isLoading ? 'Creating Account...' : 'Sign Up'}
                 </IonButton>
 
                 <IonButton
@@ -148,6 +259,14 @@ const SignUpPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        <IonAlert
+          isOpen={showAlert}
+          onDidDismiss={() => setShowAlert(false)}
+          header={alertMessage.includes('successfully') ? 'Success' : 'Error'}
+          message={alertMessage}
+          buttons={['OK']}
+        />
       </IonContent>
     </IonPage>
   );

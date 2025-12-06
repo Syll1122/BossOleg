@@ -18,6 +18,7 @@ import {
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline } from 'ionicons/icons';
+import { logout } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
 
 const Home: React.FC = () => {
@@ -293,10 +294,7 @@ const Home: React.FC = () => {
               button
               onClick={() => {
                 setMenuEvent(null);
-                localStorage.removeItem('watch_user_role');
-                localStorage.removeItem('watch_user_name');
-                history.push('/login');
-                window.location.reload();
+                logout();
               }}
             >
               <IonIcon slot="start" icon={logOutOutline} />

@@ -1,34 +1,67 @@
 // src/pages/LoginPage.tsx
 
-import React, { useState } from 'react';
-import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText } from '@ionic/react';
+import React, { useState, useEffect } from 'react';
+import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText, IonAlert } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
+import { databaseService } from '../services/database';
 
 const LoginPage: React.FC = () => {
   const history = useHistory();
-  const [email, setEmail] = useState('');
+  const [identifier, setIdentifier] = useState('');
   const [password, setPassword] = useState('');
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
-  const onSubmit = (e: React.FormEvent) => {
+  // Initialize database on mount
+  useEffect(() => {
+    databaseService.init().catch((error) => {
+      console.error('Database initialization error:', error);
+    });
+  }, []);
+
+  const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
-    // Temporary test accounts for testing
-    // Resident account: R1 / 1234
-    // Collector account: C1 / 1234
-    
-    if ((email.toLowerCase() === 'r1' || email === 'R1') && password === '1234') {
-      // Store user role in localStorage for now
-      localStorage.setItem('watch_user_role', 'resident');
-      localStorage.setItem('watch_user_name', 'Resident User');
-      history.push('/');
-      window.location.reload(); // Reload to update user state
-    } else if ((email.toLowerCase() === 'c1' || email === 'C1') && password === '1234') {
-      localStorage.setItem('watch_user_role', 'collector');
-      localStorage.setItem('watch_user_name', 'Collector User');
-      history.push('/collector');
-      window.location.reload(); // Reload to update user state
-    } else {
-      alert('Invalid credentials. Use R1/1234 for resident or C1/1234 for collector.');
+    setIsLoading(true);
+
+    if (!identifier || !password) {
+      setAlertMessage('Please enter your username/email and password');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    try {
+      // Authenticate against local database
+      const account = await databaseService.authenticate(identifier.trim(), password);
+
+      if (account) {
+        // Store user session in localStorage
+        localStorage.setItem('watch_user_id', account.id);
+        localStorage.setItem('watch_user_role', account.role);
+        localStorage.setItem('watch_user_name', account.name);
+        localStorage.setItem('watch_user_email', account.email);
+        localStorage.setItem('watch_user_username', account.username);
+
+        // Redirect based on role
+        if (account.role === 'collector') {
+          history.push('/collector');
+        } else {
+          history.push('/');
+        }
+        
+        // Reload to update user state
+        window.location.reload();
+      } else {
+        setAlertMessage('Invalid username/email or password. Please try again.');
+        setShowAlert(true);
+        setIsLoading(false);
+      }
+    } catch (error: any) {
+      console.error('Login error:', error);
+      setAlertMessage('An error occurred during login. Please try again.');
+      setShowAlert(true);
+      setIsLoading(false);
     }
   };
 
@@ -76,8 +109,13 @@ const LoginPage: React.FC = () => {
                   lines="none"
                   style={{ marginBottom: '0.9rem', borderRadius: 16, '--background': '#f9fafb' } as any}
                 >
-                  <IonLabel position="stacked">Username</IonLabel>
-                  <IonInput required value={email} onIonInput={(e) => setEmail(e.detail.value!)} placeholder="R1 or C1" />
+                  <IonLabel position="stacked">Username or Email</IonLabel>
+                  <IonInput 
+                    required 
+                    value={identifier} 
+                    onIonInput={(e) => setIdentifier(e.detail.value!)} 
+                    placeholder="Enter username or email" 
+                  />
                 </IonItem>
 
                 <IonItem
@@ -116,13 +154,14 @@ const LoginPage: React.FC = () => {
                   type="submit"
                   expand="block"
                   shape="round"
+                  disabled={isLoading}
                   style={{
                     '--background': '#16a34a',
                     '--background-activated': '#15803d',
                     marginBottom: '0.75rem',
                   }}
                 >
-                  Sign In
+                  {isLoading ? 'Signing In...' : 'Sign In'}
                 </IonButton>
 
                 <IonButton
@@ -144,6 +183,14 @@ const LoginPage: React.FC = () => {
             </p>
           </IonText>
         </div>
+
+        <IonAlert
+          isOpen={showAlert}
+          onDidDismiss={() => setShowAlert(false)}
+          header="Login Error"
+          message={alertMessage}
+          buttons={['OK']}
+        />
       </IonContent>
     </IonPage>
   );

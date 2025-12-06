@@ -1,28 +1,111 @@
 // src/pages/resident/ReportPage.tsx
 
-import React, { useState } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio } from '@ionic/react';
+import React, { useState, useEffect } from 'react';
+import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio, IonAlert, IonSpinner } from '@ionic/react';
 import { arrowBackOutline, documentTextOutline, listOutline } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
+import { databaseService } from '../../services/database';
+import useCurrentUser from '../../state/useCurrentUser';
+import { getCurrentUserId } from '../../utils/auth';
 
 const ReportPage: React.FC = () => {
   const history = useHistory();
+  const { user } = useCurrentUser();
   const [reportType, setReportType] = useState<'type' | 'select' | null>(null);
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [customReport, setCustomReport] = useState('');
   const [barangay, setBarangay] = useState('');
   const [truckNo, setTruckNo] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [showAlert, setShowAlert] = useState(false);
+  const [alertMessage, setAlertMessage] = useState('');
+  const [alertHeader, setAlertHeader] = useState('');
+
+  useEffect(() => {
+    // Initialize database
+    databaseService.init().catch((error) => {
+      console.error('Database initialization error:', error);
+    });
+  }, []);
 
   const predefinedOptions = [
     'Truck is not going in your street when it supposedly go',
     'It just pass your street',
   ];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Submit report to backend
-    alert('Report submitted successfully!');
-    history.goBack();
+    
+    if (reportType === 'select' && !selectedOption) {
+      setAlertHeader('Validation Error');
+      setAlertMessage('Please select an issue.');
+      setShowAlert(true);
+      return;
+    }
+
+    if (reportType === 'type' && !customReport.trim()) {
+      setAlertHeader('Validation Error');
+      setAlertMessage('Please describe the issue.');
+      setShowAlert(true);
+      return;
+    }
+
+    if (!barangay.trim()) {
+      setAlertHeader('Validation Error');
+      setAlertMessage('Please enter your barangay.');
+      setShowAlert(true);
+      return;
+    }
+
+    if (!truckNo.trim()) {
+      setAlertHeader('Validation Error');
+      setAlertMessage('Please enter the truck number.');
+      setShowAlert(true);
+      return;
+    }
+
+    setIsSubmitting(true);
+
+    try {
+      const userId = getCurrentUserId();
+      if (!userId || !user) {
+        setAlertHeader('Error');
+        setAlertMessage('You must be logged in to submit a report.');
+        setShowAlert(true);
+        setIsSubmitting(false);
+        return;
+      }
+
+      // Get user email from account
+      const account = await databaseService.getAccountById(userId);
+      const userEmail = account?.email || '';
+
+      // Create report
+      await databaseService.createReport({
+        userId: userId,
+        userName: user.name,
+        userEmail: userEmail,
+        reportType: reportType!,
+        issue: reportType === 'select' ? selectedOption : customReport.trim(),
+        barangay: barangay.trim(),
+        truckNo: truckNo.trim(),
+      });
+
+      setAlertHeader('Success');
+      setAlertMessage('Report submitted successfully! The admin will review it.');
+      setShowAlert(true);
+
+      // Reset form and go back after delay
+      setTimeout(() => {
+        history.goBack();
+      }, 1500);
+    } catch (error: any) {
+      console.error('Error submitting report:', error);
+      setAlertHeader('Error');
+      setAlertMessage(error.message || 'Failed to submit report. Please try again.');
+      setShowAlert(true);
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -166,19 +249,27 @@ const ReportPage: React.FC = () => {
                     type="submit"
                     expand="block"
                     shape="round"
-                    disabled={reportType === 'select' && !selectedOption}
+                    disabled={(reportType === 'select' && !selectedOption) || isSubmitting}
                     style={{
                       '--background': '#16a34a',
                       '--background-activated': '#15803d',
                     }}
                   >
-                    Submit Report
+                    {isSubmitting ? 'Submitting...' : 'Submit Report'}
                   </IonButton>
                 </form>
               )}
             </div>
           </div>
         </div>
+
+        <IonAlert
+          isOpen={showAlert}
+          onDidDismiss={() => setShowAlert(false)}
+          header={alertHeader}
+          message={alertMessage}
+          buttons={['OK']}
+        />
       </IonContent>
     </IonPage>
   );

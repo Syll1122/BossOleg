@@ -17,10 +17,25 @@ interface CollectorRoutePageProps {
   onBack?: () => void;
 }
 
+// Validate GPS coordinates
+const isValidCoordinate = (lat: number, lng: number): boolean => {
+  return (
+    typeof lat === 'number' &&
+    typeof lng === 'number' &&
+    !isNaN(lat) &&
+    !isNaN(lng) &&
+    lat >= -90 &&
+    lat <= 90 &&
+    lng >= -180 &&
+    lng <= 180
+  );
+};
+
 const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   const mapRef = useRef<L.Map | null>(null);
   const [truckMarker, setTruckMarker] = useState<L.Marker | null>(null);
   const [truckFullAlert, setTruckFullAlert] = useState(false);
+  const watchIdRef = useRef<number | null>(null);
 
   const whiteTruckIcon = L.divIcon({
     html: '🚛',
@@ -50,17 +65,54 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
     setTimeout(() => {
       if (!mapRef.current) return;
 
-      // Coordinates for Holy Spirit area streets (more accurate locations)
-      const militaryRoad: L.LatLngExpression = [14.683, 121.055];
-      const leyteGulf: L.LatLngExpression = [14.682, 121.057];
-      const commodore: L.LatLngExpression = [14.681, 121.059];
+      // Updated coordinates for collection stops
+      const donPedro: L.LatLngExpression = [14.682042, 121.076975];
+      const donPrimitivo: L.LatLngExpression = [14.680823, 121.076206];
+      const donElpidio: L.LatLngExpression = [14.679855, 121.077793];
 
-      const stops: L.LatLngExpression[] = [militaryRoad, leyteGulf, commodore];
+      const stops: L.LatLngExpression[] = [donPedro, donPrimitivo, donElpidio];
+      
+      // Add labels to markers
+      const stopLabels = ['Don Pedro', 'Don Primitivo', 'Don Elpidio'];
 
-      // Add simple flag markers for each stop instead of drawing a route line.
-      stops.forEach((pos) => {
-        L.marker(pos, { icon: stopIcon }).addTo(mapRef.current!);
+      // Add simple flag markers for each stop with labels
+      stops.forEach((pos, index) => {
+        const marker = L.marker(pos, { icon: stopIcon }).addTo(mapRef.current!);
+        marker.bindPopup(`<div style="text-align: center; font-weight: 600;">${stopLabels[index]}</div>`);
       });
+
+      // Function to update truck position
+      const updateTruckPosition = (lat: number, lng: number) => {
+        if (!mapRef.current) return;
+        
+        if (!isValidCoordinate(lat, lng)) {
+          console.error('Invalid GPS coordinates:', lat, lng);
+          return;
+        }
+        
+        const latlng: L.LatLngExpression = [lat, lng];
+        
+        if (truckMarker) {
+          // Update existing marker position
+          truckMarker.setLatLng(latlng);
+        } else {
+          // Create new marker if it doesn't exist
+          const marker = L.marker(latlng, { icon: whiteTruckIcon }).addTo(mapRef.current);
+          setTruckMarker(marker);
+          
+          // Add click popup to truck marker
+          marker.bindPopup(`
+            <div style="text-align: center; padding: 0.5rem;">
+              <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
+              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+              <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
+              <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
+                Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+              </div>
+            </div>
+          `);
+        }
+      };
 
       // Get user's actual GPS location first, then place truck there
       if (navigator.geolocation) {
@@ -68,38 +120,72 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
           (pos) => {
             if (!mapRef.current) return;
             
-            const latlng: L.LatLngExpression = [pos.coords.latitude, pos.coords.longitude];
+            const lat = pos.coords.latitude;
+            const lng = pos.coords.longitude;
+            
+            if (!isValidCoordinate(lat, lng)) {
+              console.error('Invalid GPS coordinates from getCurrentPosition');
+              // Fallback to first stop
+              if (!mapRef.current) return;
+              mapRef.current.setView(donPedro, 16);
+              const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
+              setTruckMarker(marker);
+              marker.bindPopup(`
+                <div style="text-align: center; padding: 0.5rem;">
+                  <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
+                  <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+                  <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
+                </div>
+              `);
+              mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
+              return;
+            }
+            
+            const latlng: L.LatLngExpression = [lat, lng];
+            
             // Center map on user's actual location first
             mapRef.current.setView(latlng, 16);
             
             // Place truck at user's actual location
-            const marker = L.marker(latlng, { icon: whiteTruckIcon }).addTo(mapRef.current);
-            setTruckMarker(marker);
-            
-            // Add click popup to truck marker
-            marker.bindPopup(`
-              <div style="text-align: center; padding: 0.5rem;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-                <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
-                <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-              </div>
-            `);
+            updateTruckPosition(lat, lng);
             
             // Fit bounds to show both truck location and all stops
             const allPoints = [latlng, ...stops];
             mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
+
+            // Set up real-time location tracking (watchPosition)
+            watchIdRef.current = navigator.geolocation.watchPosition(
+              (pos) => {
+                const newLat = pos.coords.latitude;
+                const newLng = pos.coords.longitude;
+                
+                if (isValidCoordinate(newLat, newLng)) {
+                  updateTruckPosition(newLat, newLng);
+                }
+              },
+              (error) => {
+                console.error('GPS tracking error:', error);
+              },
+              {
+                enableHighAccuracy: true,
+                timeout: 10000,
+                maximumAge: 5000, // Accept cached position up to 5 seconds old
+              }
+            );
           },
-          () => {
+          (error) => {
             // If GPS fails, place truck at first stop
+            console.error('GPS error:', error);
             if (!mapRef.current) return;
-            mapRef.current.setView(militaryRoad, 16);
-            const marker = L.marker(militaryRoad, { icon: whiteTruckIcon }).addTo(mapRef.current);
+            mapRef.current.setView(donPedro, 16);
+            const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
             setTruckMarker(marker);
             marker.bindPopup(`
               <div style="text-align: center; padding: 0.5rem;">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
                 <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
                 <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
+                <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS unavailable</div>
               </div>
             `);
             mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
@@ -109,14 +195,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       } else {
         // Fallback if geolocation not available
         if (!mapRef.current) return;
-        mapRef.current.setView(militaryRoad, 16);
-        const marker = L.marker(militaryRoad, { icon: whiteTruckIcon }).addTo(mapRef.current);
+        mapRef.current.setView(donPedro, 16);
+        const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
         setTruckMarker(marker);
         marker.bindPopup(`
           <div style="text-align: center; padding: 0.5rem;">
             <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
             <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
             <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
+            <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS not available</div>
           </div>
         `);
         mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
@@ -147,10 +234,14 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   };
 
   useEffect(() => {
-    // Cleanup marker if the component unmounts
+    // Cleanup marker and stop GPS tracking if the component unmounts
     return () => {
       if (truckMarker) {
         truckMarker.remove();
+      }
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
       }
     };
   }, [truckMarker]);
@@ -193,7 +284,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       <IonContent fullscreen>
         <div style={{ padding: '0.25rem 1rem 5.5rem' }}>
           <div className="watch-card" style={{ overflow: 'hidden', height: '63vh', borderRadius: 24 }}>
-            <AnyMapView id="collector-map" center={[14.676, 121.043]} onMapReady={handleMapReady} />
+            <AnyMapView id="collector-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
           </div>
         </div>
 

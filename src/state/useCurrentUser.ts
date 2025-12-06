@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { User } from '../models/types';
+import { databaseService } from '../services/database';
 
 interface UseCurrentUserResult {
   user: User | null;
@@ -13,21 +14,46 @@ export function useCurrentUser(): UseCurrentUserResult {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check localStorage for user role (set by login)
-    const storedRole = localStorage.getItem('watch_user_role') as User['role'] | null;
-    const storedName = localStorage.getItem('watch_user_name') || 'User';
-    
-    // Simulate loading current user (from storage/API)
-    const timeout = setTimeout(() => {
-      if (storedRole) {
-        setUser({ id: 'u1', name: storedName, role: storedRole });
-      } else {
-        // Default to resident if no role stored
-        setUser({ id: 'u1', name: 'Guest User', role: 'resident' });
+    const loadUser = async () => {
+      try {
+        // Initialize database
+        await databaseService.init();
+
+        // Check localStorage for user ID (set by login)
+        const storedUserId = localStorage.getItem('watch_user_id');
+        const storedRole = localStorage.getItem('watch_user_role') as User['role'] | null;
+        const storedName = localStorage.getItem('watch_user_name') || 'User';
+        
+        if (storedUserId && storedRole) {
+          // Try to get account from database to ensure it still exists
+          try {
+            // For now, use localStorage data (can be enhanced to fetch from DB)
+            setUser({ 
+              id: storedUserId, 
+              name: storedName, 
+              role: storedRole 
+            });
+          } catch (error) {
+            // If account not found in DB, clear session
+            localStorage.removeItem('watch_user_id');
+            localStorage.removeItem('watch_user_role');
+            localStorage.removeItem('watch_user_name');
+            localStorage.removeItem('watch_user_email');
+            setUser(null);
+          }
+        } else {
+          // No user logged in
+          setUser(null);
+        }
+      } catch (error) {
+        console.error('Error loading user:', error);
+        setUser(null);
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
-    }, 300);
-    return () => clearTimeout(timeout);
+    };
+
+    loadUser();
   }, []);
 
   return { user, loading };

@@ -14,6 +14,7 @@ import { menuOutline, personCircleOutline } from 'ionicons/icons';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { useHistory } from 'react-router-dom';
+import { logout } from '../../utils/auth';
 
 interface CollectorHomePageProps {
   onStartCollecting: () => void;
@@ -77,7 +78,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               zIndex: 0,
             }}
           >
-            <AnyMapView id="collector-home-map" center={[14.676, 121.043]} zoom={15} onMapReady={handleMapReady} />
+            <AnyMapView id="collector-home-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
           </div>
 
           {/* Top header overlay */}
@@ -195,7 +196,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {['MILITARY ROAD, HOLY SPIRIT', 'LEYTE GULF ST., HOLY SPIRIT', 'COMMODORE RD., HOLY SPIRIT'].map(
+              {['Don Pedro, HOLY SPIRIT', 'Don Primitivo, HOLY SPIRIT', 'Don Elpidio, HOLY SPIRIT'].map(
                 (street) => (
                   <button
                     key={street}
@@ -268,7 +269,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               button
               onClick={() => {
                 setMenuEvent(null);
-                history.push('/login');
+                logout();
               }}
             >
               Log out
