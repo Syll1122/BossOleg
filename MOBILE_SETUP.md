@@ -238,3 +238,4 @@ All data is stored locally on the device and persists even when the app is close
 
 
 
+
