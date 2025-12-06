@@ -17,7 +17,7 @@ import {
   IonLabel,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
-import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline } from 'ionicons/icons';
+import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline } from 'ionicons/icons';
 import { logout } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
 
@@ -229,6 +229,24 @@ const Home: React.FC = () => {
               >
                 <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.2rem' }} />
                 Report
+              </button>
+              <button
+                type="button"
+                style={{
+                  border: 'none',
+                  background: 'transparent',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  padding: '0.25rem 0.5rem',
+                  color: '#6b7280',
+                  fontSize: '0.7rem',
+                  cursor: 'pointer',
+                }}
+                onClick={() => history.push('/resident/reports')}
+              >
+                <IonIcon icon={documentTextOutline} style={{ fontSize: '1.2rem' }} />
+                View Reports
               </button>
               <button
                 type="button"

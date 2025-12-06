@@ -27,6 +27,7 @@ import AdminTabs from './pages/admin/AdminTabs';
 import ResidentTruckView from './pages/resident/ResidentTruckView';
 import ProfilePage from './pages/resident/ProfilePage';
 import ReportPage from './pages/resident/ReportPage';
+import ReportsProgressPage from './pages/resident/ReportsProgressPage';
 
 setupIonicReact();
 
@@ -43,6 +44,7 @@ const App: React.FC = () => {
           <Route path="/resident/truck" component={ResidentTruckView} exact />
           <Route path="/resident/profile" component={ProfilePage} exact />
           <Route path="/resident/report" component={ReportPage} exact />
+          <Route path="/resident/reports" component={ReportsProgressPage} exact />
         </IonRouterOutlet>
       </IonReactRouter>
     </IonApp>

@@ -5,6 +5,8 @@ import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonBut
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { busOutline } from 'ionicons/icons';
+import { databaseService } from '../../services/database';
+import { getCurrentUserId } from '../../utils/auth';
 
 interface TruckLocation {
   truckId: string;
@@ -231,17 +233,51 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
   };
 
   const onTruckFullConfirm = async () => {
-    if (truckMarkerRef.current) {
-      truckMarkerRef.current.setIcon(redTruckIcon);
-    }
-    if (onBack) {
-      onBack();
+    try {
+      // Update truck status in database
+      const userId = getCurrentUserId();
+      if (userId) {
+        await databaseService.updateTruckStatus('BCG 11*4', true, userId);
+      }
+      
+      // Update marker icon to red
+      if (truckMarkerRef.current) {
+        truckMarkerRef.current.setIcon(redTruckIcon);
+      }
+      
+      if (onBack) {
+        onBack();
+      }
+    } catch (error) {
+      console.error('Error updating truck status:', error);
+      // Still proceed with UI update even if DB fails
+      if (truckMarkerRef.current) {
+        truckMarkerRef.current.setIcon(redTruckIcon);
+      }
+      if (onBack) {
+        onBack();
+      }
     }
   };
 
   const onTruckEmpty = async () => {
-    if (truckMarkerRef.current) {
-      truckMarkerRef.current.setIcon(whiteTruckIcon);
+    try {
+      // Update truck status in database
+      const userId = getCurrentUserId();
+      if (userId) {
+        await databaseService.updateTruckStatus('BCG 11*4', false, userId);
+      }
+      
+      // Update marker icon to white
+      if (truckMarkerRef.current) {
+        truckMarkerRef.current.setIcon(whiteTruckIcon);
+      }
+    } catch (error) {
+      console.error('Error updating truck status:', error);
+      // Still proceed with UI update even if DB fails
+      if (truckMarkerRef.current) {
+        truckMarkerRef.current.setIcon(whiteTruckIcon);
+      }
     }
   };
 

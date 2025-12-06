@@ -1,5 +1,5 @@
 // src/pages/collector/CollectorHomePage.tsx
-import React, { useRef, useState } from 'react';
+import React, { useRef, useState, useEffect } from 'react';
 import {
   IonPage,
   IonContent,
@@ -14,7 +14,8 @@ import { menuOutline, personCircleOutline } from 'ionicons/icons';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { useHistory } from 'react-router-dom';
-import { logout } from '../../utils/auth';
+import { logout, getCurrentUserId } from '../../utils/auth';
+import { databaseService } from '../../services/database';
 
 interface CollectorHomePageProps {
   onStartCollecting: () => void;
@@ -25,16 +26,59 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [showLocationError, setShowLocationError] = useState(false);
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
+  const [truckIsFull, setTruckIsFull] = useState(false);
+  const [collectorName, setCollectorName] = useState('Manong Collector');
   const history = useHistory();
+
+  // Load collector name and truck status
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        await databaseService.init();
+        
+        // Get collector name
+        const userId = getCurrentUserId();
+        if (userId) {
+          const account = await databaseService.getAccountById(userId);
+          if (account?.name) {
+            setCollectorName(account.name);
+          }
+        }
+        
+        // Check truck status
+        const status = await databaseService.getTruckStatus('BCG 11*4');
+        if (status) {
+          setTruckIsFull(status.isFull);
+        }
+      } catch (error) {
+        console.error('Error loading collector data:', error);
+      }
+    };
+
+    loadData();
+  }, []);
 
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
   };
 
-  const requestLocationAndStart = () => {
+  const requestLocationAndStart = async () => {
     if (!navigator.geolocation) {
       setShowLocationError(true);
       return;
+    }
+
+    // If truck is full, empty it first
+    if (truckIsFull) {
+      try {
+        const userId = getCurrentUserId();
+        if (userId) {
+          await databaseService.updateTruckStatus('BCG 11*4', false, userId);
+          setTruckIsFull(false);
+        }
+      } catch (error) {
+        console.error('Error updating truck status:', error);
+      }
     }
 
     navigator.geolocation.getCurrentPosition(
@@ -107,7 +151,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               }}
             >
               <IonIcon icon={personCircleOutline} style={{ fontSize: '1.4rem', color: '#4b286d' }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>Manong Collector</span>
+              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{collectorName}</span>
             </div>
 
             <IonButton
@@ -182,7 +226,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 >
                   ▶
                 </span>
-                Start Collecting
+                {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
               </button>
 
               <div style={{ textAlign: 'right' }}>

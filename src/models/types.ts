@@ -34,3 +34,10 @@ export interface Report {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface TruckStatus {
+  id: string; // Truck ID (e.g., 'BCG 11*4')
+  isFull: boolean;
+  updatedAt: string;
+  updatedBy: string; // Collector user ID
+}

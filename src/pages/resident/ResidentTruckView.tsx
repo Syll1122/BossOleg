@@ -6,6 +6,7 @@ import { arrowBackOutline, busOutline } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
+import { databaseService } from '../../services/database';
 
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
@@ -28,6 +29,15 @@ const ResidentTruckView: React.FC = () => {
     iconSize: [40, 40],
     iconAnchor: [20, 20],
   });
+
+  const truckFullIcon = L.divIcon({
+    html: '🚛',
+    className: 'watch-truck-icon watch-truck-icon--red',
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
+  });
+
+  const [truckIsFull, setTruckIsFull] = useState(false);
 
 
   // Validate GPS coordinates
@@ -67,45 +77,104 @@ const ResidentTruckView: React.FC = () => {
       // Center map on truck location
       mapRef.current.setView(truckLatLng, 16);
       
-      // Place truck marker at actual truck location
-      const marker = L.marker(truckLatLng, { icon: truckIcon }).addTo(mapRef.current);
-      setTruckMarker(marker);
-      
-      // Create popup content with report button
-      const popupContent = document.createElement('div');
-      popupContent.style.textAlign = 'center';
-      popupContent.style.padding = '0.75rem';
-      popupContent.style.minWidth = '200px';
-      popupContent.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
-        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
-        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
-        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
-          Lat: ${currentLat.toFixed(6)}, Lng: ${currentLng.toFixed(6)}
-        </div>
-        <button id="truck-report-btn" style="
-          width: 100%;
-          padding: 0.6rem 1rem;
-          background: #16a34a;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 600;
-          font-size: 0.9rem;
-          margin-top: 0.5rem;
-        ">⚠️ Report Issue</button>
-      `;
-      
-      marker.bindPopup(popupContent);
-      
-      marker.on('popupopen', () => {
-        const btn = document.getElementById('truck-report-btn');
-        if (btn) {
-          btn.onclick = () => {
-            history.push('/resident/report');
-          };
-        }
+      // Check truck status and use appropriate icon
+      databaseService.init().then(async () => {
+        if (!mapRef.current) return;
+        
+        const status = await databaseService.getTruckStatus('BCG 11*4');
+        const isFull = status?.isFull || false;
+        setTruckIsFull(isFull);
+        
+        // Place truck marker at actual truck location with appropriate icon
+        const icon = isFull ? truckFullIcon : truckIcon;
+        const marker = L.marker(truckLatLng, { icon }).addTo(mapRef.current);
+        setTruckMarker(marker);
+        
+        // Create popup content with report button and status
+        const popupContent = document.createElement('div');
+        popupContent.style.textAlign = 'center';
+        popupContent.style.padding = '0.75rem';
+        popupContent.style.minWidth = '200px';
+        popupContent.innerHTML = `
+          <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
+          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
+          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
+          <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 600;">
+            ${isFull ? '🔴 TRUCK FULL' : '🟢 Truck Available'}
+          </div>
+          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
+            Lat: ${currentLat.toFixed(6)}, Lng: ${currentLng.toFixed(6)}
+          </div>
+          <button id="truck-report-btn" style="
+            width: 100%;
+            padding: 0.6rem 1rem;
+            background: #16a34a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+          ">⚠️ Report Issue</button>
+        `;
+        
+        marker.bindPopup(popupContent);
+        
+        marker.on('popupopen', () => {
+          const btn = document.getElementById('truck-report-btn');
+          if (btn) {
+            btn.onclick = () => {
+              history.push({
+                pathname: '/resident/report',
+                state: { truckNo: truckData.truckNo }
+              });
+            };
+          }
+        });
+      }).catch((error) => {
+        console.error('Error initializing database:', error);
+        // Fallback: create marker without status check
+        if (!mapRef.current) return;
+        const marker = L.marker(truckLatLng, { icon: truckIcon }).addTo(mapRef.current);
+        setTruckMarker(marker);
+        
+        const popupContent = document.createElement('div');
+        popupContent.style.textAlign = 'center';
+        popupContent.style.padding = '0.75rem';
+        popupContent.style.minWidth = '200px';
+        popupContent.innerHTML = `
+          <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
+          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
+          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
+          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
+            Lat: ${currentLat.toFixed(6)}, Lng: ${currentLng.toFixed(6)}
+          </div>
+          <button id="truck-report-btn-fallback" style="
+            width: 100%;
+            padding: 0.6rem 1rem;
+            background: #16a34a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+          ">⚠️ Report Issue</button>
+        `;
+        marker.bindPopup(popupContent);
+        marker.on('popupopen', () => {
+          const btn = document.getElementById('truck-report-btn-fallback');
+          if (btn) {
+            btn.onclick = () => {
+              history.push({
+                pathname: '/resident/report',
+                state: { truckNo: truckData.truckNo }
+              });
+            };
+          }
+        });
       });
 
       // Optionally add user location marker if GPS is available (for reference)
@@ -142,6 +211,30 @@ const ResidentTruckView: React.FC = () => {
     }, 300);
   };
 
+  // Check truck status on mount and set up polling
+  useEffect(() => {
+    const checkTruckStatus = async () => {
+      try {
+        await databaseService.init();
+        const status = await databaseService.getTruckStatus('BCG 11*4');
+        if (status) {
+          setTruckIsFull(status.isFull);
+        }
+      } catch (error) {
+        console.error('Error checking truck status:', error);
+      }
+    };
+
+    checkTruckStatus();
+
+    // Set up periodic status updates
+    const statusInterval = setInterval(checkTruckStatus, 5000); // Check every 5 seconds
+
+    return () => {
+      clearInterval(statusInterval);
+    };
+  }, []);
+
   // Set up periodic location updates when marker is created
   useEffect(() => {
     if (!truckMarker) return;
@@ -168,53 +261,62 @@ const ResidentTruckView: React.FC = () => {
     };
   }, [truckMarker]);
 
-  // Update truck marker when location changes
+  // Update truck marker when location or status changes
   useEffect(() => {
     if (truckMarker && isValidCoordinate(truckLocation.lat, truckLocation.lng)) {
       const currentPos = truckMarker.getLatLng();
       // Only update if position actually changed (avoid unnecessary updates)
       if (Math.abs(currentPos.lat - truckLocation.lat) > 0.0001 || Math.abs(currentPos.lng - truckLocation.lng) > 0.0001) {
         truckMarker.setLatLng([truckLocation.lat, truckLocation.lng]);
-        
-        // Update popup with new coordinates
-        const popupContent = document.createElement('div');
-        popupContent.style.textAlign = 'center';
-        popupContent.style.padding = '0.75rem';
-        popupContent.style.minWidth = '200px';
-        popupContent.innerHTML = `
-          <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
-          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
-            Lat: ${truckLocation.lat.toFixed(6)}, Lng: ${truckLocation.lng.toFixed(6)}
-          </div>
-          <button id="truck-report-btn-updated" style="
-            width: 100%;
-            padding: 0.6rem 1rem;
-            background: #16a34a;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-          ">⚠️ Report Issue</button>
-        `;
-        
-        truckMarker.bindPopup(popupContent);
-        
-        truckMarker.on('popupopen', () => {
-          const btn = document.getElementById('truck-report-btn-updated');
-          if (btn) {
-            btn.onclick = () => {
-              history.push('/resident/report');
-            };
-          }
-        });
       }
+      
+      // Update icon based on status
+      truckMarker.setIcon(truckIsFull ? truckFullIcon : truckIcon);
+      
+      // Update popup with new coordinates and status
+      const popupContent = document.createElement('div');
+      popupContent.style.textAlign = 'center';
+      popupContent.style.padding = '0.75rem';
+      popupContent.style.minWidth = '200px';
+      popupContent.innerHTML = `
+        <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: ${truckIsFull ? '#ef4444' : '#16a34a'}; font-weight: 600;">
+          ${truckIsFull ? '🔴 TRUCK FULL' : '🟢 Truck Available'}
+        </div>
+        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
+          Lat: ${truckLocation.lat.toFixed(6)}, Lng: ${truckLocation.lng.toFixed(6)}
+        </div>
+        <button id="truck-report-btn-updated" style="
+          width: 100%;
+          padding: 0.6rem 1rem;
+          background: #16a34a;
+          color: white;
+          border: none;
+          border-radius: 8px;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 0.9rem;
+          margin-top: 0.5rem;
+        ">⚠️ Report Issue</button>
+      `;
+      
+      truckMarker.bindPopup(popupContent);
+      
+      truckMarker.on('popupopen', () => {
+        const btn = document.getElementById('truck-report-btn-updated');
+        if (btn) {
+          btn.onclick = () => {
+            history.push({
+              pathname: '/resident/report',
+              state: { truckNo: truckData.truckNo }
+            });
+          };
+        }
+      });
     }
-  }, [truckLocation, truckMarker, history, truckData]);
+  }, [truckLocation, truckMarker, truckIsFull, history, truckData]);
 
   useEffect(() => {
     return () => {

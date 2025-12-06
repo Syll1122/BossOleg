@@ -1,32 +1,65 @@
 // src/pages/resident/ReportPage.tsx
 
 import React, { useState, useEffect } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio, IonAlert, IonSpinner } from '@ionic/react';
+import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio, IonAlert, IonSpinner, IonSelect, IonSelectOption } from '@ionic/react';
 import { arrowBackOutline, documentTextOutline, listOutline } from 'ionicons/icons';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { databaseService } from '../../services/database';
 import useCurrentUser from '../../state/useCurrentUser';
 import { getCurrentUserId } from '../../utils/auth';
 
+// Available trucks in the system
+const AVAILABLE_TRUCKS = [
+  'BCG 11*4',
+  'BCG 12*5',
+  'BCG 13*6',
+  'BCG 14*7',
+];
+
 const ReportPage: React.FC = () => {
   const history = useHistory();
+  const location = useLocation<{ truckNo?: string } | undefined>();
   const { user } = useCurrentUser();
   const [reportType, setReportType] = useState<'type' | 'select' | null>(null);
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [customReport, setCustomReport] = useState('');
   const [barangay, setBarangay] = useState('');
   const [truckNo, setTruckNo] = useState('');
+  const [hasAddress, setHasAddress] = useState(false);
+  const [truckFromMarker, setTruckFromMarker] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const [alertHeader, setAlertHeader] = useState('');
 
+  // Load profile address and truck number from navigation state
   useEffect(() => {
-    // Initialize database
-    databaseService.init().catch((error) => {
-      console.error('Database initialization error:', error);
-    });
-  }, []);
+    const loadInitialData = async () => {
+      try {
+        await databaseService.init();
+        
+        // Get truck number from location state (if coming from truck marker)
+        if (location.state?.truckNo) {
+          setTruckNo(location.state.truckNo);
+          setTruckFromMarker(true);
+        }
+        
+        // Load user's address from profile
+        const userId = getCurrentUserId();
+        if (userId) {
+          const account = await databaseService.getAccountById(userId);
+          if (account?.address) {
+            setBarangay(account.address);
+            setHasAddress(true);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading initial data:', error);
+      }
+    };
+
+    loadInitialData();
+  }, [location.state]);
 
   const predefinedOptions = [
     'Truck is not going in your street when it supposedly go',
@@ -60,14 +93,14 @@ const ReportPage: React.FC = () => {
 
     if (!barangay.trim()) {
       setAlertHeader('Validation Error');
-      setAlertMessage('Please enter your barangay.');
+      setAlertMessage(hasAddress ? 'Please update your address in Profile to use it here, or enter a barangay.' : 'Please enter your barangay.');
       setShowAlert(true);
       return;
     }
 
     if (!truckNo.trim()) {
       setAlertHeader('Validation Error');
-      setAlertMessage('Please enter the truck number.');
+      setAlertMessage(truckFromMarker ? 'Truck number is required.' : 'Please select a truck number.');
       setShowAlert(true);
       return;
     }
@@ -239,10 +272,25 @@ const ReportPage: React.FC = () => {
 
                   <IonItem
                     lines="none"
-                    style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                    style={{ marginBottom: '1rem', borderRadius: 14, '--background': hasAddress ? '#f3f4f6' : '#f9fafb' } as any}
                   >
                     <IonLabel position="stacked">Barangay</IonLabel>
-                    <IonInput required value={barangay} onIonInput={(e) => setBarangay(e.detail.value!)} placeholder="Enter barangay name" />
+                    {hasAddress ? (
+                      <IonInput 
+                        required 
+                        value={barangay} 
+                        readonly
+                        style={{ '--color': '#6b7280', cursor: 'not-allowed' } as any}
+                        placeholder="Barangay from profile"
+                      />
+                    ) : (
+                      <IonInput 
+                        required 
+                        value={barangay} 
+                        onIonInput={(e) => setBarangay(e.detail.value!)} 
+                        placeholder="Enter barangay name" 
+                      />
+                    )}
                   </IonItem>
 
                   <IonItem
@@ -250,7 +298,28 @@ const ReportPage: React.FC = () => {
                     style={{ marginBottom: '1.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                   >
                     <IonLabel position="stacked">Truck No</IonLabel>
-                    <IonInput required value={truckNo} onIonInput={(e) => setTruckNo(e.detail.value!)} placeholder="Enter truck number" />
+                    {truckFromMarker ? (
+                      <IonInput 
+                        required 
+                        value={truckNo} 
+                        readonly
+                        style={{ '--color': '#6b7280', cursor: 'not-allowed' } as any}
+                        placeholder="Truck number from selection"
+                      />
+                    ) : (
+                      <IonSelect
+                        value={truckNo}
+                        placeholder="Select truck number"
+                        onIonChange={(e) => setTruckNo(e.detail.value)}
+                        interface="popover"
+                      >
+                        {AVAILABLE_TRUCKS.map((truck) => (
+                          <IonSelectOption key={truck} value={truck}>
+                            {truck}
+                          </IonSelectOption>
+                        ))}
+                      </IonSelect>
+                    )}
                   </IonItem>
 
                   <IonButton

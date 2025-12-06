@@ -17,14 +17,113 @@ const SignUpPage: React.FC = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [otpInput, setOtpInput] = useState('');
+  const [generatedOtp, setGeneratedOtp] = useState('');
+
+  // Generate OTP code
+  const generateOTP = (): string => {
+    return Math.floor(100000 + Math.random() * 900000).toString();
+  };
+
+  // Send OTP (mock implementation - in production, send via email service)
+  const sendOTP = () => {
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(email)) {
+      setAlertMessage('Please enter a valid email address first');
+      setShowAlert(true);
+      return;
+    }
+
+    const otp = generateOTP();
+    setGeneratedOtp(otp);
+    setOtpSent(true);
+    setOtpInput('');
+    
+    // In production, send OTP via email service
+    // For now, show it in alert (for testing purposes)
+    setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp} (This is for testing only)`);
+    setShowAlert(true);
+    
+    // Store OTP with expiration (5 minutes)
+    const otpData = {
+      code: otp,
+      email: email.toLowerCase().trim(),
+      expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
+    };
+    localStorage.setItem('signup_otp', JSON.stringify(otpData));
+  };
+
+  // Validate name (only letters and spaces)
+  const validateName = (value: string): boolean => {
+    // Allow only letters, spaces, and common name characters (apostrophes, hyphens)
+    const nameRegex = /^[a-zA-Z\s'-]+$/;
+    return nameRegex.test(value);
+  };
+
+  const handleNameChange = (value: string) => {
+    if (value === '' || validateName(value)) {
+      setName(value);
+    }
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
     // Validation
-    if (!email || !username || !password || !confirmPassword || !role) {
+    if (!email || !username || !password || !confirmPassword || !role || !name.trim()) {
       setAlertMessage('Please fill in all fields');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Name validation
+    if (!validateName(name.trim())) {
+      setAlertMessage('Name can only contain letters, spaces, apostrophes, and hyphens');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // OTP validation
+    if (!otpSent) {
+      setAlertMessage('Please verify your email with OTP first');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Check OTP
+    const storedOtpData = localStorage.getItem('signup_otp');
+    if (!storedOtpData) {
+      setAlertMessage('OTP expired. Please request a new one.');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    const otpData = JSON.parse(storedOtpData);
+    if (otpData.email !== email.toLowerCase().trim()) {
+      setAlertMessage('OTP was sent to a different email. Please request a new one.');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    if (Date.now() > otpData.expiresAt) {
+      setAlertMessage('OTP expired. Please request a new one.');
+      setShowAlert(true);
+      setIsLoading(false);
+      localStorage.removeItem('signup_otp');
+      return;
+    }
+
+    if (otpInput !== otpData.code && otpInput !== generatedOtp) {
+      setAlertMessage('Invalid OTP code. Please try again.');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -62,6 +161,9 @@ const SignUpPage: React.FC = () => {
         name: name.trim() || username.trim(),
         role,
       });
+
+      // Clear OTP data
+      localStorage.removeItem('signup_otp');
 
       // Success - redirect to login
       setAlertMessage('Account created successfully! Please log in.');
@@ -154,8 +256,8 @@ const SignUpPage: React.FC = () => {
                   <IonInput 
                     required 
                     value={name} 
-                    onIonInput={(e) => setName(e.detail.value!)} 
-                    placeholder="Your name" 
+                    onIonInput={(e) => handleNameChange(e.detail.value!)} 
+                    placeholder="Your name (letters only)" 
                   />
                 </IonItem>
 
@@ -181,10 +283,63 @@ const SignUpPage: React.FC = () => {
                     required 
                     type="email" 
                     value={email} 
-                    onIonInput={(e) => setEmail(e.detail.value!)} 
+                    onIonInput={(e) => {
+                      setEmail(e.detail.value!);
+                      if (otpSent) {
+                        setOtpSent(false);
+                        setOtpInput('');
+                        setGeneratedOtp('');
+                      }
+                    }} 
                     placeholder="you@example.com" 
                   />
                 </IonItem>
+
+                {!otpSent ? (
+                  <IonButton
+                    type="button"
+                    expand="block"
+                    shape="round"
+                    fill="outline"
+                    onClick={sendOTP}
+                    style={{
+                      '--border-color': '#16a34a',
+                      '--color': '#16a34a',
+                      marginBottom: '0.9rem',
+                    }}
+                  >
+                    Send OTP to Email
+                  </IonButton>
+                ) : (
+                  <IonItem
+                    lines="none"
+                    style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  >
+                    <IonLabel position="stacked">Enter OTP Code</IonLabel>
+                    <IonInput 
+                      required 
+                      type="text" 
+                      value={otpInput} 
+                      onIonInput={(e) => setOtpInput(e.detail.value!.replace(/\D/g, '').slice(0, 6))} 
+                      placeholder="6-digit code" 
+                      maxlength={6}
+                    />
+                    <IonButton
+                      slot="end"
+                      fill="clear"
+                      size="small"
+                      onClick={() => {
+                        setOtpSent(false);
+                        setOtpInput('');
+                        setGeneratedOtp('');
+                        localStorage.removeItem('signup_otp');
+                      }}
+                      style={{ '--color': '#6b7280', fontSize: '0.75rem' }}
+                    >
+                      Change Email
+                    </IonButton>
+                  </IonItem>
+                )}
 
                 <IonItem
                   lines="none"

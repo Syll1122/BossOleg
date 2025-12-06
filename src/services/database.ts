@@ -1,12 +1,13 @@
 // src/services/database.ts
 // Local database service using IndexedDB (works on web and mobile)
 
-import { Account, UserRole, Report } from '../models/types';
+import { Account, UserRole, Report, TruckStatus } from '../models/types';
 
 const DB_NAME = 'WatchAppDB';
-const DB_VERSION = 2; // Incremented to add reports store
+const DB_VERSION = 3; // Incremented to add truck status store
 const STORE_NAME = 'accounts';
 const REPORTS_STORE_NAME = 'reports';
+const TRUCK_STATUS_STORE_NAME = 'truckStatus';
 
 class DatabaseService {
   private db: IDBDatabase | null = null;
@@ -62,6 +63,12 @@ class DatabaseService {
           reportsStore.createIndex('userId', 'userId', { unique: false });
           reportsStore.createIndex('status', 'status', { unique: false });
           reportsStore.createIndex('createdAt', 'createdAt', { unique: false });
+        }
+
+        // Create truck status store if it doesn't exist
+        if (!db.objectStoreNames.contains(TRUCK_STATUS_STORE_NAME)) {
+          const truckStatusStore = db.createObjectStore(TRUCK_STATUS_STORE_NAME, { keyPath: 'id', autoIncrement: false });
+          truckStatusStore.createIndex('updatedAt', 'updatedAt', { unique: false });
         }
       };
     });
@@ -475,6 +482,63 @@ class DatabaseService {
       };
 
       getRequest.onerror = () => reject(getRequest.error);
+    });
+  }
+
+  /**
+   * Update or create truck status
+   */
+  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string): Promise<TruckStatus> {
+    await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([TRUCK_STATUS_STORE_NAME], 'readwrite');
+      const store = transaction.objectStore(TRUCK_STATUS_STORE_NAME);
+
+      const status: TruckStatus = {
+        id: truckId,
+        isFull,
+        updatedAt: new Date().toISOString(),
+        updatedBy,
+      };
+
+      const request = store.put(status);
+      request.onsuccess = () => resolve(status);
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get truck status by truck ID
+   */
+  async getTruckStatus(truckId: string): Promise<TruckStatus | null> {
+    await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([TRUCK_STATUS_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(TRUCK_STATUS_STORE_NAME);
+
+      const request = store.get(truckId);
+      request.onsuccess = () => {
+        resolve(request.result || null);
+      };
+      request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get all truck statuses
+   */
+  async getAllTruckStatuses(): Promise<TruckStatus[]> {
+    await this.init();
+
+    return new Promise((resolve, reject) => {
+      const transaction = this.db!.transaction([TRUCK_STATUS_STORE_NAME], 'readonly');
+      const store = transaction.objectStore(TRUCK_STATUS_STORE_NAME);
+
+      const request = store.getAll();
+      request.onsuccess = () => resolve(request.result || []);
+      request.onerror = () => reject(request.error);
     });
   }
 }
