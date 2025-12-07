@@ -501,14 +501,21 @@ class DatabaseService {
   /**
    * Update or create truck status
    */
-  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string, isCollecting?: boolean): Promise<TruckStatus> {
+  async updateTruckStatus(
+    truckId: string, 
+    isFull: boolean, 
+    updatedBy: string, 
+    isCollecting?: boolean,
+    latitude?: number,
+    longitude?: number
+  ): Promise<TruckStatus> {
     await this.init();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([TRUCK_STATUS_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(TRUCK_STATUS_STORE_NAME);
 
-      // Get existing status to preserve isCollecting if not provided
+      // Get existing status to preserve values if not provided
       const getRequest = store.get(truckId);
       getRequest.onsuccess = () => {
         const existingStatus = getRequest.result;
@@ -516,6 +523,8 @@ class DatabaseService {
           id: truckId,
           isFull,
           isCollecting: isCollecting !== undefined ? isCollecting : (existingStatus?.isCollecting ?? false),
+          latitude: latitude !== undefined ? latitude : (existingStatus?.latitude),
+          longitude: longitude !== undefined ? longitude : (existingStatus?.longitude),
           updatedAt: new Date().toISOString(),
           updatedBy,
         };
@@ -530,6 +539,8 @@ class DatabaseService {
           id: truckId,
           isFull,
           isCollecting: isCollecting ?? false,
+          latitude: latitude,
+          longitude: longitude,
           updatedAt: new Date().toISOString(),
           updatedBy,
         };

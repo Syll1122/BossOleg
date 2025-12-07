@@ -170,14 +170,25 @@ const ResidentTruckView: React.FC = () => {
               console.log(`Adding truck ${collector.truckNo} to map - is collecting`);
               const isFull = status.isFull || false;
               
-              // Use default location (you can enhance this to get actual GPS location)
-              // For now, placing them at different locations around the center
-              const baseLat = 14.683726;
-              const baseLng = 121.076224;
-              const offset = collectors.indexOf(collector) * 0.002; // Small offset for each truck
+              // Use GPS coordinates from truck_status if available, otherwise use default location
+              let truckLat: number;
+              let truckLng: number;
               
-              const truckLat = baseLat + offset;
-              const truckLng = baseLng + offset;
+              if (status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                // Use actual GPS coordinates from database
+                truckLat = status.latitude;
+                truckLng = status.longitude;
+                console.log(`Using GPS coordinates for truck ${collector.truckNo}:`, truckLat, truckLng);
+              } else {
+                // Fallback to default location if GPS not available
+                const baseLat = 14.683726;
+                const baseLng = 121.076224;
+                const offset = collectors.indexOf(collector) * 0.002;
+                truckLat = baseLat + offset;
+                truckLng = baseLng + offset;
+                console.log(`Using default location for truck ${collector.truckNo}:`, truckLat, truckLng);
+              }
               
               if (!isValidCoordinate(truckLat, truckLng)) continue;
               
@@ -294,6 +305,12 @@ const ResidentTruckView: React.FC = () => {
             if (marker && mapRef.current) {
               const isFull = status.isFull || false;
               
+              // Update marker position if GPS coordinates are available
+              if (status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                marker.setLatLng([status.latitude, status.longitude]);
+              }
+              
               // Update icon based on status
               const icon = createTruckIcon(isFull, collector.truckNo);
               marker.setIcon(icon);
@@ -330,12 +347,24 @@ const ResidentTruckView: React.FC = () => {
               });
             } else if (!marker && mapRef.current && status.isCollecting) {
               // Truck is collecting but marker doesn't exist - add it
-              const baseLat = 14.683726;
-              const baseLng = 121.076224;
-              const collectors = await databaseService.getAccountsByRole('collector');
-              const offset = collectors.findIndex(c => c.truckNo === collector.truckNo) * 0.002;
-              const truckLat = baseLat + offset;
-              const truckLng = baseLng + offset;
+              // Use GPS coordinates from truck_status if available, otherwise use default
+              let truckLat: number;
+              let truckLng: number;
+              
+              if (status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                // Use actual GPS coordinates from database
+                truckLat = status.latitude;
+                truckLng = status.longitude;
+              } else {
+                // Fallback to default location if GPS not available
+                const baseLat = 14.683726;
+                const baseLng = 121.076224;
+                const collectors = await databaseService.getAccountsByRole('collector');
+                const offset = collectors.findIndex(c => c.truckNo === collector.truckNo) * 0.002;
+                truckLat = baseLat + offset;
+                truckLng = baseLng + offset;
+              }
               
               if (isValidCoordinate(truckLat, truckLng)) {
                 const isFull = status.isFull || false;

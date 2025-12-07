@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS truck_status (
   id TEXT PRIMARY KEY,
   "isFull" BOOLEAN NOT NULL DEFAULT FALSE,
   "isCollecting" BOOLEAN NOT NULL DEFAULT FALSE,
+  latitude DOUBLE PRECISION, -- GPS latitude
+  longitude DOUBLE PRECISION, -- GPS longitude
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedBy" TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
 );

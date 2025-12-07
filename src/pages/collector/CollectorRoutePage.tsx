@@ -87,6 +87,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     };
     
     setTruckCollecting();
+    
+    // Cleanup: Stop collecting when component unmounts or navigates away
+    return () => {
+      const cleanup = async () => {
+        try {
+          const userId = getCurrentUserId();
+          if (userId && truckNo) {
+            await databaseService.updateTruckStatus(truckNo, false, userId, false);
+          }
+          if (watchIdRef.current !== null && navigator.geolocation) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+        } catch (error) {
+          console.error('Error cleaning up truck status:', error);
+        }
+      };
+      cleanup();
+    };
   }, [truckNo]); // Run whenever truckNo changes
 
   // Create truck icons with dynamic truck number
@@ -336,7 +355,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       loadAllTrucks();
 
       // Function to update truck position
-      const updateTruckPosition = (lat: number, lng: number) => {
+      const updateTruckPosition = async (lat: number, lng: number) => {
         if (!mapRef.current) return;
         
         if (!isValidCoordinate(lat, lng)) {
@@ -351,6 +370,17 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         if (!currentTruckNo) {
           console.log('Truck number not loaded yet, skipping marker update');
           return;
+        }
+        
+        // Save GPS position to database (for resident map to see)
+        try {
+          const userId = getCurrentUserId();
+          if (userId && currentTruckNo) {
+            // Update truck status with GPS coordinates and ensure isCollecting is true
+            await databaseService.updateTruckStatus(currentTruckNo, false, userId, true, lat, lng);
+          }
+        } catch (error) {
+          console.error('Error updating truck GPS position in database:', error);
         }
         
         if (truckMarkerRef.current) {
