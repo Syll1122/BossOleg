@@ -48,7 +48,7 @@ const ProfilePage: React.FC = () => {
           // Check if profile is complete
           const hasData = account.address && account.phoneNumber;
           setHasProfileData(!!hasData);
-          setIsEditing(!hasData); // If no data, start in edit mode
+          setIsEditing(false); // Always start in view mode, user can click edit button
         } else {
           // If account not found, use current user data
           setName(user?.name || '');

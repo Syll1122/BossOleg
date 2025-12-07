@@ -39,6 +39,7 @@ export interface Report {
 export interface TruckStatus {
   id: string; // Truck ID (e.g., 'BCG 11*4')
   isFull: boolean;
+  isCollecting: boolean; // Whether the truck is currently collecting
   updatedAt: string;
   updatedBy: string; // Collector user ID
 }

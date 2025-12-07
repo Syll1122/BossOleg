@@ -47,7 +47,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const [truckFullAlert, setTruckFullAlert] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [truckNo, setTruckNo] = useState('BCG 11*4');
+  const [truckNo, setTruckNo] = useState('');
   const otherTrucksRef = useRef<Map<string, L.Marker>>(new Map());
   const watchIdRef = useRef<number | null>(null);
 
@@ -85,6 +85,71 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       iconSize: [60, 50],
       iconAnchor: [30, 45],
     });
+  };
+
+  // Create truck information popup content
+  const createTruckInfoPopup = (truckNo: string, lat?: number, lng?: number) => {
+    const popupContent = document.createElement('div');
+    popupContent.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 0;
+      min-width: 220px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    const coordinatesHtml = (lat !== undefined && lng !== undefined) 
+      ? `<div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
+          Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+        </div>`
+      : '';
+    
+    popupContent.innerHTML = `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e5e7eb;
+      ">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <div style="font-size: 1.2rem;">🚛</div>
+          <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937;">Truck Information</div>
+        </div>
+        <button 
+          id="truck-info-close-btn-${truckNo}"
+          style="
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: #6b7280;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+          "
+          onmouseover="this.style.color='#1f2937'"
+          onmouseout="this.style.color='#6b7280'"
+        >×</button>
+      </div>
+      <div style="padding: 0.75rem 1rem;">
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: #1f2937;">Truck No:</strong> 
+          <span style="color: #1f2937;">${truckNo}</span>
+        </div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: #1f2937;">Truck Size:</strong> 
+          <span style="color: #1f2937;">Large</span>
+        </div>
+        ${coordinatesHtml}
+      </div>
+    `;
+    
+    return popupContent;
   };
 
   const stopIcon = L.divIcon({
@@ -142,11 +207,12 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
 
           // Get all collector accounts
           const collectors = await databaseService.getAccountsByRole('collector');
-          const currentTruckNo = truckNo || 'BCG 11*4';
+          const currentTruckNo = truckNo;
           
-          // Add markers for all other collector trucks
+          // Add markers for all other collector trucks (only those with valid accounts and truck numbers)
           for (const collector of collectors) {
-            if (collector.truckNo && collector.truckNo !== currentTruckNo) {
+            // Only show trucks that have valid accounts with truck numbers
+            if (collector.id && collector.truckNo && collector.truckNo.trim() !== '' && collector.truckNo !== currentTruckNo) {
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
               const isFull = status?.isFull || false;
@@ -162,15 +228,82 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               
               const icon = createTruckIcon(isFull, collector.truckNo);
               const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
-              marker.bindPopup(`
-                <div style="text-align: center; padding: 0.5rem;">
-                  <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 ${collector.truckNo}</div>
-                  <div style="font-size: 0.85rem;"><strong>Collector:</strong> ${collector.name}</div>
-                  <div style="font-size: 0.85rem; color: ${isFull ? '#ef4444' : '#16a34a'}; margin-top: 0.25rem;">
-                    ${isFull ? '● Full' : '● Available'}
+              
+              // Create popup with modern design matching the second image
+              const popupContent = document.createElement('div');
+              popupContent.style.cssText = `
+                background: white;
+                border-radius: 12px;
+                padding: 0;
+                min-width: 200px;
+                box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+              `;
+              
+              popupContent.innerHTML = `
+                <div style="
+                  display: flex;
+                  align-items: center;
+                  justify-content: space-between;
+                  padding: 0.75rem 1rem;
+                  border-bottom: 1px solid #e5e7eb;
+                ">
+                  <div style="display: flex; align-items: center; gap: 0.5rem;">
+                    <div style="font-size: 1.2rem;">🚛</div>
+                    <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937;">${collector.truckNo}</div>
+                  </div>
+                  <button 
+                    onclick="this.closest('.leaflet-popup').closePopup()"
+                    style="
+                      background: none;
+                      border: none;
+                      font-size: 1.2rem;
+                      color: #6b7280;
+                      cursor: pointer;
+                      padding: 0;
+                      width: 24px;
+                      height: 24px;
+                      display: flex;
+                      align-items: center;
+                      justify-content: center;
+                      line-height: 1;
+                    "
+                    onmouseover="this.style.color='#1f2937'"
+                    onmouseout="this.style.color='#6b7280'"
+                  >×</button>
+                </div>
+                <div style="padding: 0.75rem 1rem;">
+                  <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937; margin-bottom: 0.5rem;">
+                    Collector: ${collector.name || 'N/A'}
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                    <span style="
+                      width: 8px;
+                      height: 8px;
+                      border-radius: 50%;
+                      background-color: ${isFull ? '#ef4444' : '#16a34a'};
+                      display: inline-block;
+                    "></span>
+                    <span style="color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 500;">
+                      ${isFull ? 'Full' : 'Available'}
+                    </span>
                   </div>
                 </div>
-              `);
+              `;
+              
+              marker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
+              });
+              
+              // Add close button handler
+              marker.on('popupopen', () => {
+                const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    marker.closePopup();
+                  };
+                }
+              });
               
               // Store marker reference
               otherTrucksRef.current.set(collector.truckNo, marker);
@@ -193,23 +326,35 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         }
         
         const latlng: L.LatLngExpression = [lat, lng];
-        const currentTruckNo = truckNo || 'BCG 11*4'; // Fallback if not loaded yet
+        const currentTruckNo = truckNo;
+        
+        // Only create/update marker if truck number is loaded
+        if (!currentTruckNo) {
+          console.log('Truck number not loaded yet, skipping marker update');
+          return;
+        }
         
         if (truckMarkerRef.current) {
           // Update existing marker position
           truckMarkerRef.current.setLatLng(latlng);
           
           // Update popup with new coordinates
-          truckMarkerRef.current.bindPopup(`
-            <div style="text-align: center; padding: 0.5rem;">
-              <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
-              <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-              <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
-                Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
-              </div>
-            </div>
-          `);
+          const popupContent = createTruckInfoPopup(currentTruckNo, lat, lng);
+          truckMarkerRef.current.bindPopup(popupContent, {
+            className: 'custom-truck-popup',
+            closeButton: false,
+          });
+          
+          // Add close button handler
+          truckMarkerRef.current.off('popupopen');
+          truckMarkerRef.current.on('popupopen', () => {
+            const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+            if (closeBtn) {
+              closeBtn.onclick = () => {
+                truckMarkerRef.current?.closePopup();
+              };
+            }
+          });
         } else {
           // Create new marker if it doesn't exist
           const icon = createTruckIcon(false, currentTruckNo);
@@ -217,18 +362,36 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           truckMarkerRef.current = marker;
           
           // Add click popup to truck marker
-          marker.bindPopup(`
-            <div style="text-align: center; padding: 0.5rem;">
-              <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
-              <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-              <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
-                Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
-              </div>
-            </div>
-          `);
+          const popupContent = createTruckInfoPopup(currentTruckNo, lat, lng);
+          marker.bindPopup(popupContent, {
+            className: 'custom-truck-popup',
+            closeButton: false,
+          });
+          
+          // Add close button handler
+          marker.on('popupopen', () => {
+            const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+            if (closeBtn) {
+              closeBtn.onclick = () => {
+                marker.closePopup();
+              };
+            }
+          });
         }
       };
+
+      // Set truck as collecting when route page loads
+      const setTruckCollecting = async () => {
+        try {
+          const userId = getCurrentUserId();
+          if (userId && truckNo) {
+            await databaseService.updateTruckStatus(truckNo, false, userId, true);
+          }
+        } catch (error) {
+          console.error('Error setting truck as collecting:', error);
+        }
+      };
+      setTruckCollecting();
 
       // Get user's actual GPS location first, then place truck there
       if (navigator.geolocation) {
@@ -244,17 +407,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               // Fallback to first stop
               if (!mapRef.current) return;
               mapRef.current.setView(donPedro, 16);
-              const currentTruckNo = truckNo || 'BCG 11*4';
-              const icon = createTruckIcon(false, currentTruckNo);
-              const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-              truckMarkerRef.current = marker;
-              marker.bindPopup(`
-                <div style="text-align: center; padding: 0.5rem;">
-                  <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-                  <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${truckNo}</div>
-                  <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-                </div>
-              `);
+              const currentTruckNo = truckNo;
+              if (currentTruckNo) {
+                const icon = createTruckIcon(false, currentTruckNo);
+                const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
+                truckMarkerRef.current = marker;
+                const popupContent = createTruckInfoPopup(currentTruckNo);
+                marker.bindPopup(popupContent, {
+                  className: 'custom-truck-popup',
+                  closeButton: false,
+                });
+                marker.on('popupopen', () => {
+                  const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+                  if (closeBtn) {
+                    closeBtn.onclick = () => {
+                      marker.closePopup();
+                    };
+                  }
+                });
+              }
               mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
               return;
             }
@@ -302,18 +473,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             console.error('GPS error:', error);
             if (!mapRef.current) return;
             mapRef.current.setView(donPedro, 16);
-            const currentTruckNo = truckNo || 'BCG 11*4';
-            const icon = createTruckIcon(false, currentTruckNo);
-            const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-            truckMarkerRef.current = marker;
-            marker.bindPopup(`
-              <div style="text-align: center; padding: 0.5rem;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-                <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${truckNo}</div>
-                <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-                <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS unavailable</div>
-              </div>
-            `);
+            const currentTruckNo = truckNo;
+            if (currentTruckNo) {
+              const icon = createTruckIcon(false, currentTruckNo);
+              const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
+              truckMarkerRef.current = marker;
+              const popupContent = createTruckInfoPopup(currentTruckNo);
+              marker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
+              });
+              marker.on('popupopen', () => {
+                const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    marker.closePopup();
+                  };
+                }
+              });
+            }
             mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
           },
           { enableHighAccuracy: true, timeout: 8000 },
@@ -321,19 +499,26 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       } else {
         // Fallback if geolocation not available
         if (!mapRef.current) return;
-        const currentTruckNo = truckNo || 'BCG 11*4';
+        const currentTruckNo = truckNo;
         mapRef.current.setView(donPedro, 16);
-        const icon = createTruckIcon(false, currentTruckNo);
-        const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-        truckMarkerRef.current = marker;
-        marker.bindPopup(`
-          <div style="text-align: center; padding: 0.5rem;">
-            <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-            <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
-            <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
-            <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS not available</div>
-          </div>
-        `);
+        if (currentTruckNo) {
+          const icon = createTruckIcon(false, currentTruckNo);
+          const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
+          truckMarkerRef.current = marker;
+          const popupContent = createTruckInfoPopup(currentTruckNo);
+          marker.bindPopup(popupContent, {
+            className: 'custom-truck-popup',
+            closeButton: false,
+          });
+          marker.on('popupopen', () => {
+            const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+            if (closeBtn) {
+              closeBtn.onclick = () => {
+                marker.closePopup();
+              };
+            }
+          });
+        }
         mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
       }
     }, 300);
@@ -342,16 +527,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   // Stop collecting - return to collector home page and reset truck status
   const onStopCollecting = async () => {
     try {
-      // Reset truck status to not full (empty)
+      // Set truck as not collecting and reset truck status to not full (empty)
       const userId = getCurrentUserId();
-      if (userId) {
-        await databaseService.updateTruckStatus(truckNo, false, userId);
+      if (userId && truckNo) {
+        await databaseService.updateTruckStatus(truckNo, false, userId, false);
       }
       
       // Update marker icon to white if it was red
-      if (truckMarkerRef.current) {
-        const currentTruckNo = truckNo || 'BCG 11*4';
-        truckMarkerRef.current.setIcon(createTruckIcon(false, currentTruckNo));
+      if (truckMarkerRef.current && truckNo) {
+        truckMarkerRef.current.setIcon(createTruckIcon(false, truckNo));
       }
       
       // Stop GPS tracking
@@ -379,8 +563,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       
       // Update marker icon to red
       if (truckMarkerRef.current) {
-        const currentTruckNo = truckNo || 'BCG 11*4';
-        truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
+        const currentTruckNo = truckNo;
+        if (currentTruckNo && truckMarkerRef.current) {
+          truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
+        }
       }
       
       if (onBack) {
@@ -390,8 +576,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       console.error('Error updating truck status:', error);
       // Still proceed with UI update even if DB fails
       if (truckMarkerRef.current) {
-        const currentTruckNo = truckNo || 'BCG 11*4';
-        truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
+        const currentTruckNo = truckNo;
+        if (currentTruckNo && truckMarkerRef.current) {
+          truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
+        }
       }
       if (onBack) {
         onBack();
@@ -408,9 +596,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       }
       
       // Update marker icon to white
-      if (truckMarkerRef.current) {
-        const currentTruckNo = truckNo || 'BCG 11*4';
-        truckMarkerRef.current.setIcon(createTruckIcon(false, currentTruckNo));
+      if (truckMarkerRef.current && truckNo) {
+        truckMarkerRef.current.setIcon(createTruckIcon(false, truckNo));
       }
     } catch (error) {
       console.error('Error updating truck status:', error);
