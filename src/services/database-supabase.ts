@@ -541,6 +541,108 @@ class SupabaseDatabaseService {
 
     return data ? { userId: data.userId } : null;
   }
+
+  // ========== BARANGAYS METHODS ==========
+
+  /**
+   * Fallback list of common Quezon City barangays (if table doesn't exist)
+   */
+  private getDefaultBarangays(): Array<{ id: string; name: string; code?: string }> {
+    return [
+      { id: 'bg001', name: 'Bagong Silangan' },
+      { id: 'bg002', name: 'Bagong Pag-asa' },
+      { id: 'bg003', name: 'Bago Bantay' },
+      { id: 'bg033', name: 'Holy Spirit' },
+      { id: 'bg030', name: 'Fairview' },
+      { id: 'bg031', name: 'Greater Lagro' },
+      { id: 'bg057', name: 'North Fairview' },
+      { id: 'bg058', name: 'Novaliches Proper' },
+      { id: 'bg013', name: 'Commonwealth' },
+      { id: 'bg024', name: 'E. Rodriguez' },
+      { id: 'bg079', name: 'Sacred Heart' },
+      { id: 'bg084', name: 'San Isidro' },
+      { id: 'bg086', name: 'San Jose' },
+      { id: 'bg091', name: 'Santa Monica' },
+      { id: 'bg107', name: 'Tandang Sora' },
+      { id: 'bg096', name: 'Santol' },
+      { id: 'bg054', name: 'Nagkaisang Nayon' },
+      { id: 'bg048', name: 'Malaya' },
+      { id: 'bg070', name: 'Payatas' },
+      { id: 'bg068', name: 'Pasong Putik Proper' },
+    ];
+  }
+
+  /**
+   * Get all barangays (for dropdowns/selects)
+   */
+  async getAllBarangays(): Promise<Array<{ id: string; name: string; code?: string }>> {
+    try {
+      const { data, error } = await supabase
+        .from('barangays')
+        .select('id, name, code')
+        .order('name', { ascending: true });
+
+      if (error) {
+        // If table doesn't exist, return fallback list
+        if (error.message && error.message.includes('does not exist')) {
+          console.warn('barangays table does not exist. Using fallback list. Please run the migration SQL.');
+          return this.getDefaultBarangays();
+        }
+        throw new Error(error.message);
+      }
+
+      // If table exists but is empty, return fallback list
+      if (!data || data.length === 0) {
+        console.warn('barangays table is empty. Using fallback list. Please run the migration SQL to populate it.');
+        return this.getDefaultBarangays();
+      }
+
+      return data as Array<{ id: string; name: string; code?: string }>;
+    } catch (error: any) {
+      console.error('Error fetching barangays:', error);
+      // Return fallback list on error
+      return this.getDefaultBarangays();
+    }
+  }
+
+  /**
+   * Search barangays by name
+   */
+  async searchBarangays(searchTerm: string): Promise<Array<{ id: string; name: string; code?: string }>> {
+    try {
+      const { data, error } = await supabase
+        .from('barangays')
+        .select('id, name, code')
+        .ilike('name', `%${searchTerm}%`)
+        .order('name', { ascending: true })
+        .limit(20);
+
+      if (error) {
+        // If table doesn't exist, search in fallback list
+        if (error.message && error.message.includes('does not exist')) {
+          const fallback = this.getDefaultBarangays();
+          const searchLower = searchTerm.toLowerCase();
+          return fallback.filter(b => b.name.toLowerCase().includes(searchLower));
+        }
+        throw new Error(error.message);
+      }
+
+      // If no results from database but table exists, search fallback as backup
+      if (!data || data.length === 0) {
+        const fallback = this.getDefaultBarangays();
+        const searchLower = searchTerm.toLowerCase();
+        return fallback.filter(b => b.name.toLowerCase().includes(searchLower));
+      }
+
+      return data as Array<{ id: string; name: string; code?: string }>;
+    } catch (error: any) {
+      console.error('Error searching barangays:', error);
+      // Fallback to searching default list
+      const fallback = this.getDefaultBarangays();
+      const searchLower = searchTerm.toLowerCase();
+      return fallback.filter(b => b.name.toLowerCase().includes(searchLower));
+    }
+  }
 }
 
 // Export singleton instance

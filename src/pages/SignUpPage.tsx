@@ -34,38 +34,36 @@ const SignUpPage: React.FC = () => {
   // Available trucks in the system
   const ALL_TRUCKS = ['BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
 
-  // List of all Quezon City barangays
-  const QUEZON_CITY_BARANGAYS = [
-    'Alicia', 'Amihan', 'Apollo', 'Bagong Lipunan ng Crame', 'Bagong Pag-asa', 'Bagong Silangan',
-    'Bagumbayan', 'Bahay Toro', 'Balingasa', 'Balong Bato', 'Batasan Hills', 'Bayani',
-    'Blue Ridge A', 'Blue Ridge B', 'Botocan', 'Bungad', 'Camp Aguinaldo', 'Capri',
-    'Central', 'Claro', 'Commonwealth', 'Culiat', 'Damar', 'Damayan', 'Damayang Lagi',
-    'Del Monte', 'Dioquino Zobel', 'Don Manuel', 'Doña Aurora', 'Doña Imelda', 'Doña Josefa',
-    'Duyan-Duyan', 'E. Rodriguez', 'East Kamias', 'Escopa I', 'Escopa II', 'Escopa III', 'Escopa IV',
-    'Fairview', 'Greater Lagro', 'Gulod', 'Holy Spirit', 'Horseshoe', 'Immaculate Conception',
-    'Kaligayahan', 'Kalusugan', 'Kamias', 'Kamuning', 'Katipunan', 'Kaunlaran', 'Kristong Hari',
-    'Krus na Ligas', 'Laging Handa', 'Libis', 'Lourdes', 'Loyola Heights', 'Maharlika', 'Malaya',
-    'Mangga', 'Manresa', 'Mariblo', 'Marilag', 'Masagana', 'Masambong', 'Matandang Balara',
-    'Milagrosa', 'N. S. Amoranto', 'Nagkaisang Nayon', 'Nayong Kanluran', 'New Era',
-    'Novaliches Proper', 'Obrero', 'Old Balara', 'Paang Bundok', 'Pag-Ibig sa Nayon',
-    'Paligsahan', 'Paltok', 'Pansol', 'Paraiso', 'Pasong Putik Proper', 'Pasong Tamo',
-    'Payatas', 'Phil-Am', 'Project 6', 'Quirino 2-A', 'Quirino 2-B', 'Quirino 2-C', 'Quirino 3-A',
-    'Ramon Magsaysay', 'Roxas', 'Sacred Heart', 'Saint Ignatius', 'Saint Peter', 'Salvacion',
-    'San Agustin', 'San Antonio', 'San Bartolome', 'San Isidro', 'San Isidro Labrador', 'San Jose',
-    'San Martin de Porres', 'San Roque', 'San Vicente', 'Santa Cruz', 'Santa Lucia', 'Santa Monica',
-    'Santa Teresita', 'Santo Cristo', 'Santo Domingo', 'Santo Niño', 'Santol', 'Sauyo', 'Sienna',
-    'Sikatuna Village', 'Silangan', 'Socorro', 'South Triangle', 'Tagumpay', 'Talampas', 'Talayan',
-    'Talipapa', 'Tandang Sora', 'Tatalon', 'Teachers Village East', 'Teachers Village West',
-    'Ugong Norte', 'Unang Sigaw', 'University of the Philippines Campus', 'UP Campus', 'Valencia',
-    'Vasra', 'Veterans Village', 'Villa Maria Clara', 'West Kamias', 'West Triangle', 'White Plains'
-  ].sort();
+  // Barangays loaded from database
+  const [barangays, setBarangays] = useState<Array<{ id: string; name: string }>>([]);
+  const [isLoadingBarangays, setIsLoadingBarangays] = useState(false);
+
+  // Load barangays from database on component mount
+  useEffect(() => {
+    const loadBarangays = async () => {
+      setIsLoadingBarangays(true);
+      try {
+        await databaseService.init();
+        const barangayList = await databaseService.getAllBarangays();
+        setBarangays(barangayList);
+      } catch (error) {
+        console.error('Error loading barangays:', error);
+        // Fallback to empty array - will use default from database service
+        setBarangays([]);
+      } finally {
+        setIsLoadingBarangays(false);
+      }
+    };
+
+    loadBarangays();
+  }, []);
 
   // Filter barangays based on search input
   const filteredBarangays = barangaySearch
-    ? QUEZON_CITY_BARANGAYS.filter(b =>
-        b.toLowerCase().includes(barangaySearch.toLowerCase())
+    ? barangays.filter(b =>
+        b.name.toLowerCase().includes(barangaySearch.toLowerCase())
       )
-    : QUEZON_CITY_BARANGAYS;
+    : barangays;
 
   // Load available trucks when role changes to collector
   useEffect(() => {
@@ -516,8 +514,9 @@ const SignUpPage: React.FC = () => {
                         setBarangaySearch(value);
                         setShowBarangayDropdown(true);
                         // If exact match found, set barangay
-                        if (QUEZON_CITY_BARANGAYS.includes(value)) {
-                          setBarangay(value);
+                        const exactMatch = barangays.find(b => b.name.toLowerCase() === value.toLowerCase());
+                        if (exactMatch) {
+                          setBarangay(exactMatch.name);
                           setBarangaySearch('');
                           setShowBarangayDropdown(false);
                         } else {
@@ -538,7 +537,8 @@ const SignUpPage: React.FC = () => {
                         setTimeout(() => {
                           setShowBarangayDropdown(false);
                           // If search doesn't match any barangay, keep the selected one
-                          if (barangay && !QUEZON_CITY_BARANGAYS.includes(barangaySearch)) {
+                          const matchesBarangay = barangays.some(b => b.name.toLowerCase() === barangaySearch.toLowerCase());
+                          if (barangay && !matchesBarangay) {
                             setBarangaySearch('');
                           }
                         }, 200);
@@ -546,7 +546,7 @@ const SignUpPage: React.FC = () => {
                       placeholder="Search or select your barangay" 
                     />
                   </IonItem>
-                  {showBarangayDropdown && filteredBarangays.length > 0 && (
+                  {showBarangayDropdown && (
                     <div
                       style={{
                         position: 'absolute',
@@ -563,15 +563,21 @@ const SignUpPage: React.FC = () => {
                         boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
                       }}
                     >
+                      {isLoadingBarangays ? (
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                          Loading barangays...
+                        </div>
+                      ) : filteredBarangays.length > 0 ? (
+                        <>
                       {filteredBarangays.slice(0, 10).map((bg) => (
                         <div
-                          key={bg}
+                          key={bg.id}
                           onMouseDown={(e) => {
                             // Prevent blur event from firing before click
                             e.preventDefault();
                           }}
                           onClick={() => {
-                            setBarangay(bg);
+                            setBarangay(bg.name);
                             setBarangaySearch('');
                             setShowBarangayDropdown(false);
                           }}
@@ -579,17 +585,17 @@ const SignUpPage: React.FC = () => {
                             padding: '12px 16px',
                             cursor: 'pointer',
                             borderBottom: '1px solid #f3f4f6',
-                            backgroundColor: barangay === bg ? '#ecfdf3' : '#ffffff',
+                            backgroundColor: barangay === bg.name ? '#ecfdf3' : '#ffffff',
                           }}
                           onMouseEnter={(e) => {
                             e.currentTarget.style.backgroundColor = '#f9fafb';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = barangay === bg ? '#ecfdf3' : '#ffffff';
+                            e.currentTarget.style.backgroundColor = barangay === bg.name ? '#ecfdf3' : '#ffffff';
                           }}
                         >
                           <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>
-                            {bg}
+                            {bg.name}
                           </IonText>
                         </div>
                       ))}
@@ -601,6 +607,12 @@ const SignUpPage: React.FC = () => {
                       {filteredBarangays.length > 10 && (
                         <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
                           Showing first 10 of {filteredBarangays.length} results. Type to narrow down.
+                        </div>
+                      )}
+                        </>
+                      ) : (
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                          No barangay found. Please check your spelling.
                         </div>
                       )}
                     </div>
