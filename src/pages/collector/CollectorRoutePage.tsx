@@ -78,8 +78,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       try {
         const userId = getCurrentUserId();
         if (userId) {
+          // Set isFull = false and isCollecting = true when starting to collect
+          // This handles the case when continuing after truck was full
           await databaseService.updateTruckStatus(truckNo, false, userId, true);
-          console.log(`Truck ${truckNo} set as collecting`);
+          console.log(`Truck ${truckNo} set as collecting (isFull = false, isCollecting = true)`);
         }
       } catch (error) {
         console.error('Error setting truck as collecting:', error);

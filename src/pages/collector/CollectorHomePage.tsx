@@ -65,7 +65,24 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               // Check truck status using the account's truck number
               const status = await databaseService.getTruckStatus(account.truckNo);
               if (status) {
-                setTruckIsFull(status.isFull);
+                const isFull = status.isFull || false;
+                // Only update if value changed to prevent unnecessary re-renders
+                setTruckIsFull(prev => {
+                  if (prev !== isFull) {
+                    console.log(`Truck ${account.truckNo} status changed - isFull: ${isFull}, isCollecting: ${status.isCollecting}`);
+                    return isFull;
+                  }
+                  return prev;
+                });
+              } else {
+                // No status means truck is not full
+                setTruckIsFull(prev => {
+                  if (prev !== false) {
+                    console.log(`Truck ${account.truckNo} - no status found, setting isFull to false`);
+                    return false;
+                  }
+                  return prev;
+                });
               }
             }
           }
@@ -75,7 +92,16 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       }
     };
 
+    // Load immediately
     loadData();
+    
+    // Refresh status periodically to catch updates from route page
+    // Use a longer interval to avoid race conditions and reduce flickering
+    const statusInterval = setInterval(() => {
+      loadData();
+    }, 2000); // Check every 2 seconds
+    
+    return () => clearInterval(statusInterval);
   }, []);
 
   const handleMapReady = (map: L.Map) => {
@@ -216,19 +242,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       return;
     }
 
-    // If truck is full, empty it first and prepare to start collecting
-    if (truckIsFull) {
-      try {
-        const userId = getCurrentUserId();
-        if (userId) {
-          // Set isFull = false, but don't set isCollecting yet (will be set when route page loads)
-          await databaseService.updateTruckStatus(truckNo, false, userId, false);
-          setTruckIsFull(false);
-        }
-      } catch (error) {
-        console.error('Error updating truck status:', error);
-      }
-    }
+    // If truck is full, we'll empty it when route page loads
+    // Don't set isFull = false here, let the route page handle it
+    // This prevents the button from flickering back to "Start Collecting"
 
     navigator.geolocation.getCurrentPosition(
       (pos) => {
@@ -236,7 +252,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         if (mapRef.current) {
           mapRef.current.setView([latitude, longitude], 16);
         }
-        // Start collecting - this will navigate to route page which sets isCollecting = true
+        // Start collecting - this will navigate to route page
+        // Route page will set isFull = false and isCollecting = true
         onStartCollecting();
       },
       () => {
