@@ -17,11 +17,13 @@ interface EmailConfig {
 // 4. Get your Service ID, Template IDs, and Public Key
 // 5. Replace the values below
 
+// ⚠️ REPLACE THESE WITH YOUR EMAILJS CREDENTIALS
+// Get them from: https://dashboard.emailjs.com/
 const EMAIL_CONFIG: EmailConfig = {
-  serviceId: 'YOUR_SERVICE_ID', // Replace with your EmailJS service ID
-  templateId: 'YOUR_TEMPLATE_ID', // Replace with your EmailJS OTP template ID
-  publicKey: 'YOUR_PUBLIC_KEY', // Replace with your EmailJS public key
-  passwordTemplateId: 'YOUR_PASSWORD_TEMPLATE_ID', // Replace with your EmailJS password template ID
+  serviceId: 'YOUR_SERVICE_ID',           // From Email Services page
+  templateId: 'YOUR_OTP_TEMPLATE_ID',     // OTP template ID
+  publicKey: 'YOUR_PUBLIC_KEY',           // From Account > General
+  passwordTemplateId: 'YOUR_PWD_TEMPLATE_ID', // Password reset template ID
 };
 
 /**

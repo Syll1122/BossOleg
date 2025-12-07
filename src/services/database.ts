@@ -2,6 +2,8 @@
 // Re-export from Supabase implementation
 // To switch back to IndexedDB, change this import to './database-indexeddb'
 
-export { databaseService } from './database-supabase';
+// Using IndexedDB until Supabase package is installed
+// Once installed, change to: export { databaseService } from './database-supabase';
+export { databaseService } from './database-indexeddb';
 
 
