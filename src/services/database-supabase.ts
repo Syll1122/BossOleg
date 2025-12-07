@@ -402,6 +402,136 @@ class SupabaseDatabaseService {
 
     return (data || []) as TruckStatus[];
   }
+
+  // ========== SESSION MANAGEMENT METHODS ==========
+
+  /**
+   * Check if user has an active session
+   */
+  async hasActiveSession(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('user_sessions')
+        .select('id')
+        .eq('userId', userId)
+        .limit(1);
+
+      // If there's an error
+      if (error) {
+        // PGRST116 = no rows found (this is expected when no session exists)
+        // 42P01 = relation does not exist (table doesn't exist)
+        if (error.code === 'PGRST116') {
+          return false; // No session found
+        }
+        // If table doesn't exist, return false (allow login, but log warning)
+        if (error.message && error.message.includes('does not exist')) {
+          console.warn('user_sessions table does not exist yet. Please run the SQL migration in supabase-schema.sql');
+          return false; // Allow login if table doesn't exist
+        }
+        // For other errors, log and return false to be safe
+        console.error('Error checking session:', error.message, error.code);
+        return false;
+      }
+
+      // If we have data, user has an active session
+      const hasSession = data && data.length > 0;
+      console.log('hasActiveSession check:', { userId, hasSession, dataLength: data?.length });
+      return hasSession;
+    } catch (err: any) {
+      // Catch any unexpected errors and return false
+      console.error('Unexpected error checking session:', err);
+      return false;
+    }
+  }
+
+  /**
+   * Create a new session for a user
+   * This will also delete any existing sessions for the user (single session enforcement)
+   */
+  async createSession(userId: string, sessionToken: string): Promise<void> {
+    // First, delete any existing sessions for this user (enforce single session)
+    await this.deleteUserSessions(userId);
+
+    // Create new session
+    const { error } = await supabase
+      .from('user_sessions')
+      .insert({
+        id: this.generateId(),
+        userId: userId,
+        sessionToken: sessionToken,
+        createdAt: new Date().toISOString(),
+        lastActivity: new Date().toISOString(),
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Delete a session by session token
+   */
+  async deleteSession(sessionToken: string): Promise<void> {
+    const { error } = await supabase
+      .from('user_sessions')
+      .delete()
+      .eq('sessionToken', sessionToken);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    // Also clear from localStorage
+    localStorage.removeItem('watch_session_token');
+  }
+
+  /**
+   * Delete all sessions for a user
+   */
+  async deleteUserSessions(userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('user_sessions')
+      .delete()
+      .eq('userId', userId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Update session last activity time
+   */
+  async updateSessionActivity(sessionToken: string): Promise<void> {
+    const { error } = await supabase
+      .from('user_sessions')
+      .update({ lastActivity: new Date().toISOString() })
+      .eq('sessionToken', sessionToken);
+
+    if (error) {
+      // If session doesn't exist, it's okay - might have been cleared
+      if (error.code !== 'PGRST116') {
+        throw new Error(error.message);
+      }
+    }
+  }
+
+  /**
+   * Get session by token
+   */
+  async getSessionByToken(sessionToken: string): Promise<{ userId: string } | null> {
+    const { data, error } = await supabase
+      .from('user_sessions')
+      .select('userId')
+      .eq('sessionToken', sessionToken)
+      .single();
+
+    if (error && error.code !== 'PGRST116') {
+      throw new Error(error.message);
+    }
+
+    return data ? { userId: data.userId } : null;
+  }
 }
 
 // Export singleton instance

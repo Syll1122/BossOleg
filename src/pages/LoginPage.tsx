@@ -40,12 +40,42 @@ const LoginPage: React.FC = () => {
       const account = await databaseService.authenticate(identifier.trim(), password);
 
       if (account) {
+        // Check if user already has an active session BEFORE proceeding
+        const hasActiveSession = await databaseService.hasActiveSession(account.id);
+        
+        console.log('Session check for user:', account.id, 'Has active session:', hasActiveSession);
+        
+        if (hasActiveSession === true) {
+          console.log('Blocking login - account is already in use');
+          setIsLoading(false);
+          setAlertMessage('This account is being used. Please log out from the other device first.');
+          setShowAlert(true);
+          // Don't proceed with login - return early
+          return;
+        }
+
+        // Only proceed if no active session was found
+        console.log('No active session found, proceeding with login');
+
+        // Generate a unique session token
+        const sessionToken = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${account.id}`;
+        
+        // Create session in database (this will delete any existing sessions)
+        try {
+          await databaseService.createSession(account.id, sessionToken);
+          console.log('Session created successfully');
+        } catch (sessionError: any) {
+          console.error('Error creating session:', sessionError);
+          // If session creation fails, we should still allow login but log the error
+        }
+
         // Store user session in localStorage
         localStorage.setItem('watch_user_id', account.id);
         localStorage.setItem('watch_user_role', account.role);
         localStorage.setItem('watch_user_name', account.name);
         localStorage.setItem('watch_user_email', account.email);
         localStorage.setItem('watch_user_username', account.username);
+        localStorage.setItem('watch_session_token', sessionToken);
 
         // Redirect based on role
         if (account.role === 'collector') {

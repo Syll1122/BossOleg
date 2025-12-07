@@ -26,10 +26,46 @@ const SignUpPage: React.FC = () => {
   const [availableTrucks, setAvailableTrucks] = useState<string[]>([]);
   const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
   const [address, setAddress] = useState('');
+  const [barangay, setBarangay] = useState('');
+  const [barangaySearch, setBarangaySearch] = useState('');
+  const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
 
   // Available trucks in the system
   const ALL_TRUCKS = ['BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
+
+  // List of all Quezon City barangays
+  const QUEZON_CITY_BARANGAYS = [
+    'Alicia', 'Amihan', 'Apollo', 'Bagong Lipunan ng Crame', 'Bagong Pag-asa', 'Bagong Silangan',
+    'Bagumbayan', 'Bahay Toro', 'Balingasa', 'Balong Bato', 'Batasan Hills', 'Bayani',
+    'Blue Ridge A', 'Blue Ridge B', 'Botocan', 'Bungad', 'Camp Aguinaldo', 'Capri',
+    'Central', 'Claro', 'Commonwealth', 'Culiat', 'Damar', 'Damayan', 'Damayang Lagi',
+    'Del Monte', 'Dioquino Zobel', 'Don Manuel', 'Doña Aurora', 'Doña Imelda', 'Doña Josefa',
+    'Duyan-Duyan', 'E. Rodriguez', 'East Kamias', 'Escopa I', 'Escopa II', 'Escopa III', 'Escopa IV',
+    'Fairview', 'Greater Lagro', 'Gulod', 'Holy Spirit', 'Horseshoe', 'Immaculate Conception',
+    'Kaligayahan', 'Kalusugan', 'Kamias', 'Kamuning', 'Katipunan', 'Kaunlaran', 'Kristong Hari',
+    'Krus na Ligas', 'Laging Handa', 'Libis', 'Lourdes', 'Loyola Heights', 'Maharlika', 'Malaya',
+    'Mangga', 'Manresa', 'Mariblo', 'Marilag', 'Masagana', 'Masambong', 'Matandang Balara',
+    'Milagrosa', 'N. S. Amoranto', 'Nagkaisang Nayon', 'Nayong Kanluran', 'New Era',
+    'Novaliches Proper', 'Obrero', 'Old Balara', 'Paang Bundok', 'Pag-Ibig sa Nayon',
+    'Paligsahan', 'Paltok', 'Pansol', 'Paraiso', 'Pasong Putik Proper', 'Pasong Tamo',
+    'Payatas', 'Phil-Am', 'Project 6', 'Quirino 2-A', 'Quirino 2-B', 'Quirino 2-C', 'Quirino 3-A',
+    'Ramon Magsaysay', 'Roxas', 'Sacred Heart', 'Saint Ignatius', 'Saint Peter', 'Salvacion',
+    'San Agustin', 'San Antonio', 'San Bartolome', 'San Isidro', 'San Isidro Labrador', 'San Jose',
+    'San Martin de Porres', 'San Roque', 'San Vicente', 'Santa Cruz', 'Santa Lucia', 'Santa Monica',
+    'Santa Teresita', 'Santo Cristo', 'Santo Domingo', 'Santo Niño', 'Santol', 'Sauyo', 'Sienna',
+    'Sikatuna Village', 'Silangan', 'Socorro', 'South Triangle', 'Tagumpay', 'Talampas', 'Talayan',
+    'Talipapa', 'Tandang Sora', 'Tatalon', 'Teachers Village East', 'Teachers Village West',
+    'Ugong Norte', 'Unang Sigaw', 'University of the Philippines Campus', 'UP Campus', 'Valencia',
+    'Vasra', 'Veterans Village', 'Villa Maria Clara', 'West Kamias', 'West Triangle', 'White Plains'
+  ].sort();
+
+  // Filter barangays based on search input
+  const filteredBarangays = barangaySearch
+    ? QUEZON_CITY_BARANGAYS.filter(b =>
+        b.toLowerCase().includes(barangaySearch.toLowerCase())
+      )
+    : QUEZON_CITY_BARANGAYS;
 
   // Load available trucks when role changes to collector
   useEffect(() => {
@@ -127,17 +163,17 @@ const SignUpPage: React.FC = () => {
     setIsLoading(true);
 
     // Validation
-    if (!email || !username || !password || !confirmPassword || !role || !name.trim() || !address.trim() || !phoneNumber.trim()) {
+    if (!email || !username || !password || !confirmPassword || !role || !name.trim() || !address.trim() || !barangay.trim() || !phoneNumber.trim()) {
       setAlertMessage('Please fill in all fields');
       setShowAlert(true);
       setIsLoading(false);
       return;
     }
 
-    // Phone number validation
-    const phoneRegex = /^[0-9+\-\s()]+$/;
-    if (!phoneRegex.test(phoneNumber)) {
-      setAlertMessage('Please enter a valid phone number');
+    // Phone number validation - must be exactly 11 digits
+    const phoneRegex = /^[0-9]{11}$/;
+    if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
+      setAlertMessage('Please enter a valid 11-digit phone number');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -243,7 +279,8 @@ const SignUpPage: React.FC = () => {
         role,
         truckNo: role === 'collector' ? truckNo : undefined,
         address: address.trim(),
-        phoneNumber: phoneNumber.trim(),
+        barangay: barangay.trim(),
+        phoneNumber: phoneNumber.replace(/\D/g, '').slice(0, 11),
       });
 
       // Clear OTP data
@@ -465,6 +502,111 @@ const SignUpPage: React.FC = () => {
                   />
                 </IonItem>
 
+                <div style={{ position: 'relative', marginBottom: '0.9rem' }}>
+                  <IonItem
+                    lines="none"
+                    style={{ borderRadius: 14, '--background': '#f9fafb' } as any}
+                  >
+                    <IonLabel position="stacked">Barangay</IonLabel>
+                    <IonInput 
+                      required 
+                      value={barangaySearch || barangay}
+                      onIonInput={(e) => {
+                        const value = e.detail.value!;
+                        setBarangaySearch(value);
+                        setShowBarangayDropdown(true);
+                        // If exact match found, set barangay
+                        if (QUEZON_CITY_BARANGAYS.includes(value)) {
+                          setBarangay(value);
+                          setBarangaySearch('');
+                          setShowBarangayDropdown(false);
+                        } else {
+                          // Clear barangay if user is typing something different
+                          if (barangay && !value.startsWith(barangay)) {
+                            setBarangay('');
+                          }
+                        }
+                      }}
+                      onIonFocus={() => {
+                        setShowBarangayDropdown(true);
+                        if (barangay) {
+                          setBarangaySearch(barangay);
+                        }
+                      }}
+                      onIonBlur={() => {
+                        // Delay to allow click on dropdown items
+                        setTimeout(() => {
+                          setShowBarangayDropdown(false);
+                          // If search doesn't match any barangay, keep the selected one
+                          if (barangay && !QUEZON_CITY_BARANGAYS.includes(barangaySearch)) {
+                            setBarangaySearch('');
+                          }
+                        }, 200);
+                      }}
+                      placeholder="Search or select your barangay" 
+                    />
+                  </IonItem>
+                  {showBarangayDropdown && filteredBarangays.length > 0 && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: '100%',
+                        left: 0,
+                        right: 0,
+                        backgroundColor: '#ffffff',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '14px',
+                        marginTop: '4px',
+                        maxHeight: '200px',
+                        overflowY: 'auto',
+                        zIndex: 1000,
+                        boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                      }}
+                    >
+                      {filteredBarangays.slice(0, 10).map((bg) => (
+                        <div
+                          key={bg}
+                          onMouseDown={(e) => {
+                            // Prevent blur event from firing before click
+                            e.preventDefault();
+                          }}
+                          onClick={() => {
+                            setBarangay(bg);
+                            setBarangaySearch('');
+                            setShowBarangayDropdown(false);
+                          }}
+                          style={{
+                            padding: '12px 16px',
+                            cursor: 'pointer',
+                            borderBottom: '1px solid #f3f4f6',
+                            backgroundColor: barangay === bg ? '#ecfdf3' : '#ffffff',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.backgroundColor = '#f9fafb';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.backgroundColor = barangay === bg ? '#ecfdf3' : '#ffffff';
+                          }}
+                        >
+                          <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>
+                            {bg}
+                          </IonText>
+                        </div>
+                      ))}
+                      {filteredBarangays.length === 0 && (
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                          No barangay found. Please check your spelling.
+                        </div>
+                      )}
+                      {filteredBarangays.length > 10 && (
+                        <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
+                          Showing first 10 of {filteredBarangays.length} results. Type to narrow down.
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+
                 <IonItem
                   lines="none"
                   style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
@@ -473,9 +615,24 @@ const SignUpPage: React.FC = () => {
                   <IonInput 
                     required 
                     type="tel"
+                    inputMode="numeric"
                     value={phoneNumber} 
-                    onIonInput={(e) => setPhoneNumber(e.detail.value!)} 
-                    placeholder="09xx xxx xxxx" 
+                    onIonInput={(e) => {
+                      // Only allow digits and limit to 11 digits - remove any non-numeric characters
+                      const value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 11);
+                      setPhoneNumber(value);
+                    }}
+                    onKeyDown={(e) => {
+                      // Prevent non-numeric keys (except backspace, delete, tab, arrow keys)
+                      const key = e.key;
+                      if (!/[0-9]/.test(key) && 
+                          !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key) &&
+                          !(e.ctrlKey || e.metaKey)) {
+                        e.preventDefault();
+                      }
+                    }}
+                    placeholder="09123456789 (11 digits)" 
+                    maxlength={11}
                   />
                 </IonItem>
 

@@ -90,11 +90,12 @@ const ProfilePage: React.FC = () => {
       return;
     }
 
-    // Phone number validation (basic)
-    const phoneRegex = /^[0-9+\-\s()]+$/;
-    if (!phoneRegex.test(phoneNumber)) {
+    // Phone number validation - must be exactly 11 digits
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const phoneRegex = /^[0-9]{11}$/;
+    if (!phoneRegex.test(phoneDigits)) {
       setAlertHeader('Validation Error');
-      setAlertMessage('Please enter a valid phone number.');
+      setAlertMessage('Please enter a valid 11-digit phone number.');
       setShowAlert(true);
       return;
     }
@@ -128,7 +129,7 @@ const ProfilePage: React.FC = () => {
       await databaseService.updateAccount(userId, {
         name: name.trim(),
         address: address.trim(),
-        phoneNumber: phoneNumber.trim(),
+        phoneNumber: phoneNumber.replace(/\D/g, '').slice(0, 11),
       });
 
       // Update localStorage with new name
@@ -225,7 +226,28 @@ const ProfilePage: React.FC = () => {
                     >
                       <IonIcon slot="start" icon={callOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel position="stacked">Phone Number</IonLabel>
-                      <IonInput required type="tel" value={phoneNumber} onIonInput={(e) => setPhoneNumber(e.detail.value!)} placeholder="09xx xxx xxxx" />
+                      <IonInput 
+                        required 
+                        type="tel"
+                        inputMode="numeric"
+                        value={phoneNumber} 
+                        onIonInput={(e) => {
+                          // Only allow digits and limit to 11 digits - remove any non-numeric characters
+                          const value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 11);
+                          setPhoneNumber(value);
+                        }}
+                        onKeyDown={(e) => {
+                          // Prevent non-numeric keys (except backspace, delete, tab, arrow keys)
+                          const key = e.key;
+                          if (!/[0-9]/.test(key) && 
+                              !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key) &&
+                              !(e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                          }
+                        }}
+                        placeholder="09123456789 (11 digits)" 
+                        maxlength={11}
+                      />
                     </IonItem>
 
                     <IonButton

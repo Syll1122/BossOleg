@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS accounts (
   role TEXT NOT NULL CHECK (role IN ('resident', 'collector', 'admin')),
   "truckNo" TEXT UNIQUE,
   address TEXT,
+  barangay TEXT,
   "phoneNumber" TEXT,
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -64,6 +65,23 @@ CREATE TABLE IF NOT EXISTS truck_status (
 CREATE INDEX IF NOT EXISTS idx_truck_status_updatedat ON truck_status("updatedAt");
 
 -- ==========================================
+-- TABLE: user_sessions
+-- Tracks active user sessions to prevent concurrent logins
+-- ==========================================
+CREATE TABLE IF NOT EXISTS user_sessions (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  "sessionToken" TEXT UNIQUE NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  "lastActivity" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for faster lookups
+CREATE INDEX IF NOT EXISTS idx_user_sessions_userid ON user_sessions("userId");
+CREATE INDEX IF NOT EXISTS idx_user_sessions_token ON user_sessions("sessionToken");
+CREATE INDEX IF NOT EXISTS idx_user_sessions_lastactivity ON user_sessions("lastActivity");
+
+-- ==========================================
 -- Row Level Security (RLS) Policies
 -- Enable RLS for security (optional but recommended)
 -- ==========================================
@@ -72,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_truck_status_updatedat ON truck_status("updatedAt
 ALTER TABLE accounts ENABLE ROW LEVEL SECURITY;
 ALTER TABLE reports ENABLE ROW LEVEL SECURITY;
 ALTER TABLE truck_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE user_sessions ENABLE ROW LEVEL SECURITY;
 
 -- Allow all operations for now (you can customize these later)
 -- For accounts table
@@ -84,6 +103,10 @@ CREATE POLICY "Allow all access to reports" ON reports
 
 -- For truck_status table
 CREATE POLICY "Allow all access to truck_status" ON truck_status
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- For user_sessions table
+CREATE POLICY "Allow all access to user_sessions" ON user_sessions
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ==========================================

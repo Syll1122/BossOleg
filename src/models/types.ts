@@ -17,6 +17,7 @@ export interface Account {
   role: UserRole;
   truckNo?: string; // Truck number for collectors
   address?: string; // Profile field
+  barangay?: string; // Barangay in Quezon City
   phoneNumber?: string; // Profile field
   createdAt: string;
   updatedAt: string;
