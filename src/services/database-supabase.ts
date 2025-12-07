@@ -374,7 +374,17 @@ class SupabaseDatabaseService {
       throw new Error(error.message);
     }
 
-    return data as TruckStatus | null;
+    if (!data) {
+      return null;
+    }
+
+    // Ensure isCollecting field exists (for backward compatibility)
+    const status = data as TruckStatus;
+    if (status.isCollecting === undefined) {
+      status.isCollecting = false;
+    }
+
+    return status;
   }
 
   /**

@@ -5,7 +5,7 @@
 import { Account, UserRole, Report, TruckStatus } from '../models/types';
 
 const DB_NAME = 'WatchAppDB';
-const DB_VERSION = 4; // Incremented to add truckNo index
+const DB_VERSION = 5; // Incremented to add isCollecting field to truck status
 const STORE_NAME = 'accounts';
 const REPORTS_STORE_NAME = 'reports';
 const TRUCK_STATUS_STORE_NAME = 'truckStatus';
@@ -553,7 +553,16 @@ class DatabaseService {
 
       const request = store.get(truckId);
       request.onsuccess = () => {
-        resolve(request.result || null);
+        const result = request.result;
+        if (!result) {
+          resolve(null);
+          return;
+        }
+        // Ensure isCollecting field exists (for backward compatibility)
+        if (result.isCollecting === undefined) {
+          result.isCollecting = false;
+        }
+        resolve(result);
       };
       request.onerror = () => reject(request.error);
     });
