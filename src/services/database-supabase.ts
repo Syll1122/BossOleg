@@ -335,10 +335,14 @@ class SupabaseDatabaseService {
   /**
    * Update or create truck status
    */
-  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string): Promise<TruckStatus> {
+  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string, isCollecting?: boolean): Promise<TruckStatus> {
+    // Get existing status to preserve isCollecting if not provided
+    const existingStatus = await this.getTruckStatus(truckId);
+    
     const status: TruckStatus = {
       id: truckId,
       isFull,
+      isCollecting: isCollecting !== undefined ? isCollecting : (existingStatus?.isCollecting ?? false),
       updatedAt: new Date().toISOString(),
       updatedBy,
     };

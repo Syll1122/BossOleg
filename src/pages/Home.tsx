@@ -15,16 +15,53 @@ import {
   IonList,
   IonItem,
   IonLabel,
+  IonModal,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
-import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline } from 'ionicons/icons';
+import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline, closeOutline } from 'ionicons/icons';
 import { logout } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
+
+interface ScheduleItem {
+  day: string;
+  time: string;
+  street: string;
+}
 
 const Home: React.FC = () => {
   const history = useHistory();
   const { user } = useCurrentUser();
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
+  const [showScheduleModal, setShowScheduleModal] = useState(false);
+
+  // All weekly schedules
+  const allSchedules: ScheduleItem[] = [
+    { day: 'Monday', time: '7:00 AM', street: 'Military Road' },
+    { day: 'Tuesday', time: '7:15 AM', street: 'Quezon Avenue' },
+    { day: 'Wednesday', time: '7:30 AM', street: 'Leyte Gulf St.' },
+    { day: 'Thursday', time: '7:45 AM', street: 'Rizal Street' },
+    { day: 'Friday', time: '8:00 AM', street: 'Commodore Rd.' },
+    { day: 'Saturday', time: '8:15 AM', street: 'Manila Bay Drive' },
+    { day: 'Sunday', time: '8:30 AM', street: 'Pasig Boulevard' },
+  ];
+
+  // Get current day name
+  const getCurrentDay = (): string => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[new Date().getDay()];
+  };
+
+  // Get schedules for today
+  const getTodaySchedules = (): ScheduleItem[] => {
+    const today = getCurrentDay();
+    return allSchedules.filter(schedule => schedule.day === today);
+  };
+
+  // Get schedules for other days
+  const getOtherDaySchedules = (): ScheduleItem[] => {
+    const today = getCurrentDay();
+    return allSchedules.filter(schedule => schedule.day !== today);
+  };
 
   return (
     <IonPage>
@@ -111,7 +148,21 @@ const Home: React.FC = () => {
                 <IonText>
                   <h3 style={{ margin: 0, fontSize: '1rem' }}>Weekly schedule</h3>
                 </IonText>
-                <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>View all</span>
+                <button
+                  type="button"
+                  onClick={() => setShowScheduleModal(true)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    fontSize: '0.78rem',
+                    color: '#16a34a',
+                    cursor: 'pointer',
+                    padding: 0,
+                    textDecoration: 'underline',
+                  }}
+                >
+                  View all
+                </button>
               </div>
 
               {[
@@ -344,6 +395,97 @@ const Home: React.FC = () => {
           )}
         </IonList>
       </IonPopover>
+
+      {/* Weekly Schedule Modal */}
+      <IonModal isOpen={showScheduleModal} onDidDismiss={() => setShowScheduleModal(false)}>
+        <IonHeader>
+          <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
+            <IonTitle>Weekly Schedule</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={() => setShowScheduleModal(false)}>
+                <IonIcon icon={closeOutline} />
+              </IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent>
+          <div style={{ padding: '1.5rem', background: '#ecfdf3', minHeight: '100%' }}>
+            <div style={{ maxWidth: 480, margin: '0 auto' }}>
+              {/* Today's Schedule */}
+              {getTodaySchedules().length > 0 && (
+                <div className="watch-card" style={{ padding: '1.3rem 1.4rem', marginBottom: '1rem' }}>
+                  <div style={{ marginBottom: '1rem' }}>
+                    <IonText>
+                      <h3 style={{ margin: 0, fontSize: '1rem', color: '#16a34a' }}>
+                        Today ({getCurrentDay()})
+                      </h3>
+                    </IonText>
+                  </div>
+                  {getTodaySchedules().map((item, index) => (
+                    <div
+                      key={`today-${index}`}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.7rem 0',
+                        borderBottom: index < getTodaySchedules().length - 1 ? '1px solid #e5e7eb' : 'none',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{item.street}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#16a34a' }}>
+                        <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
+                        <span style={{ fontWeight: 600 }}>{item.time}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* All Weekly Schedules */}
+              <div className="watch-card" style={{ padding: '1.3rem 1.4rem' }}>
+                <div style={{ marginBottom: '1rem' }}>
+                  <IonText>
+                    <h3 style={{ margin: 0, fontSize: '1rem' }}>Full Weekly Schedule</h3>
+                  </IonText>
+                </div>
+                {allSchedules.map((item, index) => {
+                  const isToday = item.day === getCurrentDay();
+                  return (
+                    <div
+                      key={item.day}
+                      style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '0.7rem 0',
+                        borderBottom: index < allSchedules.length - 1 ? '1px solid #e5e7eb' : 'none',
+                        backgroundColor: isToday ? '#ecfdf3' : 'transparent',
+                        borderRadius: isToday ? '8px' : '0',
+                        paddingLeft: isToday ? '0.75rem' : '0',
+                        paddingRight: isToday ? '0.75rem' : '0',
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#16a34a' : '#111827' }}>
+                          {item.day} {isToday && '(Today)'}
+                        </div>
+                        <div style={{ fontSize: '0.78rem', color: '#6b7280' }}>{item.street}</div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#16a34a' : '#111827' }}>
+                        <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
+                        <span style={{ fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </IonContent>
+      </IonModal>
     </IonPage>
   );
 };

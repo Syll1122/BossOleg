@@ -10,7 +10,6 @@ import { getCurrentUserId } from '../../utils/auth';
 
 // Available trucks in the system
 const AVAILABLE_TRUCKS = [
-  'BCG 11*4',
   'BCG 12*5',
   'BCG 13*6',
   'BCG 14*7',

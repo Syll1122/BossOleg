@@ -112,9 +112,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           });
         };
 
-        // Add markers for all collector trucks
+        // Add markers for all collector trucks (only those with valid accounts and truck numbers)
         for (const collector of collectors) {
-          if (collector.truckNo && collector.id !== userId) {
+          // Only show trucks that have valid accounts with truck numbers, and exclude current user
+          if (collector.id && collector.truckNo && collector.truckNo.trim() !== '' && collector.id !== userId) {
             // Get truck status
             const status = await databaseService.getTruckStatus(collector.truckNo);
             const isFull = status?.isFull || false;
@@ -130,15 +131,72 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
             
             const icon = createTruckIcon(isFull, collector.truckNo);
             const marker = L.marker([truckLat, truckLng], { icon }).addTo(map);
-            marker.bindPopup(`
-              <div style="text-align: center; padding: 0.5rem;">
-                <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 ${collector.truckNo}</div>
-                <div style="font-size: 0.85rem;"><strong>Collector:</strong> ${collector.name}</div>
-                <div style="font-size: 0.85rem; color: ${isFull ? '#ef4444' : '#16a34a'}; margin-top: 0.25rem;">
-                  ${isFull ? '● Full' : '● Available'}
+            
+            // Create popup with modern design matching the second image
+            const popupContent = document.createElement('div');
+            popupContent.style.cssText = `
+              background: white;
+              border-radius: 12px;
+              padding: 0;
+              min-width: 200px;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            `;
+            
+            popupContent.innerHTML = `
+              <div style="
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.75rem 1rem;
+                border-bottom: 1px solid #e5e7eb;
+              ">
+                <div style="display: flex; align-items: center; gap: 0.5rem;">
+                  <div style="font-size: 1.2rem;">🚛</div>
+                  <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937;">${collector.truckNo}</div>
+                </div>
+                <button 
+                  id="truck-close-btn-${collector.truckNo}"
+                  style="
+                    background: none;
+                    border: none;
+                    font-size: 1.2rem;
+                    color: #6b7280;
+                    cursor: pointer;
+                    padding: 0;
+                    width: 24px;
+                    height: 24px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    line-height: 1;
+                  "
+                  onmouseover="this.style.color='#1f2937'"
+                  onmouseout="this.style.color='#6b7280'"
+                >×</button>
+              </div>
+              <div style="padding: 0.75rem 1rem;">
+                <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937; margin-bottom: 0.5rem;">
+                  Collector: ${collector.name || 'N/A'}
+                </div>
+                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
+                  <span style="
+                    width: 8px;
+                    height: 8px;
+                    border-radius: 50%;
+                    background-color: ${isFull ? '#ef4444' : '#16a34a'};
+                    display: inline-block;
+                  "></span>
+                  <span style="color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 500;">
+                    ${isFull ? 'Full' : 'Available'}
+                  </span>
                 </div>
               </div>
-            `);
+            `;
+            
+            marker.bindPopup(popupContent, {
+              className: 'custom-truck-popup',
+              closeButton: false,
+            });
           }
         }
       } catch (error) {

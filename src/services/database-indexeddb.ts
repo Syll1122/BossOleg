@@ -501,23 +501,43 @@ class DatabaseService {
   /**
    * Update or create truck status
    */
-  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string): Promise<TruckStatus> {
+  async updateTruckStatus(truckId: string, isFull: boolean, updatedBy: string, isCollecting?: boolean): Promise<TruckStatus> {
     await this.init();
 
     return new Promise((resolve, reject) => {
       const transaction = this.db!.transaction([TRUCK_STATUS_STORE_NAME], 'readwrite');
       const store = transaction.objectStore(TRUCK_STATUS_STORE_NAME);
 
-      const status: TruckStatus = {
-        id: truckId,
-        isFull,
-        updatedAt: new Date().toISOString(),
-        updatedBy,
-      };
+      // Get existing status to preserve isCollecting if not provided
+      const getRequest = store.get(truckId);
+      getRequest.onsuccess = () => {
+        const existingStatus = getRequest.result;
+        const status: TruckStatus = {
+          id: truckId,
+          isFull,
+          isCollecting: isCollecting !== undefined ? isCollecting : (existingStatus?.isCollecting ?? false),
+          updatedAt: new Date().toISOString(),
+          updatedBy,
+        };
 
-      const request = store.put(status);
-      request.onsuccess = () => resolve(status);
-      request.onerror = () => reject(request.error);
+        const putRequest = store.put(status);
+        putRequest.onsuccess = () => resolve(status);
+        putRequest.onerror = () => reject(putRequest.error);
+      };
+      getRequest.onerror = () => {
+        // If no existing status, create new one
+        const status: TruckStatus = {
+          id: truckId,
+          isFull,
+          isCollecting: isCollecting ?? false,
+          updatedAt: new Date().toISOString(),
+          updatedBy,
+        };
+
+        const putRequest = store.put(status);
+        putRequest.onsuccess = () => resolve(status);
+        putRequest.onerror = () => reject(putRequest.error);
+      };
     });
   }
 

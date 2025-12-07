@@ -25,9 +25,11 @@ const SignUpPage: React.FC = () => {
   const [truckNo, setTruckNo] = useState('');
   const [availableTrucks, setAvailableTrucks] = useState<string[]>([]);
   const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
+  const [address, setAddress] = useState('');
+  const [phoneNumber, setPhoneNumber] = useState('');
 
   // Available trucks in the system
-  const ALL_TRUCKS = ['BCG 11*4', 'BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
+  const ALL_TRUCKS = ['BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
 
   // Load available trucks when role changes to collector
   useEffect(() => {
@@ -125,8 +127,17 @@ const SignUpPage: React.FC = () => {
     setIsLoading(true);
 
     // Validation
-    if (!email || !username || !password || !confirmPassword || !role || !name.trim()) {
+    if (!email || !username || !password || !confirmPassword || !role || !name.trim() || !address.trim() || !phoneNumber.trim()) {
       setAlertMessage('Please fill in all fields');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Phone number validation
+    const phoneRegex = /^[0-9+\-\s()]+$/;
+    if (!phoneRegex.test(phoneNumber)) {
+      setAlertMessage('Please enter a valid phone number');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -231,6 +242,8 @@ const SignUpPage: React.FC = () => {
         name: name.trim() || username.trim(),
         role,
         truckNo: role === 'collector' ? truckNo : undefined,
+        address: address.trim(),
+        phoneNumber: phoneNumber.trim(),
       });
 
       // Clear OTP data
@@ -436,6 +449,33 @@ const SignUpPage: React.FC = () => {
                     type="password" 
                     value={confirmPassword} 
                     onIonInput={(e) => setConfirmPassword(e.detail.value!)} 
+                  />
+                </IonItem>
+
+                <IonItem
+                  lines="none"
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                >
+                  <IonLabel position="stacked">Address</IonLabel>
+                  <IonInput 
+                    required 
+                    value={address} 
+                    onIonInput={(e) => setAddress(e.detail.value!)} 
+                    placeholder="Enter your address" 
+                  />
+                </IonItem>
+
+                <IonItem
+                  lines="none"
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                >
+                  <IonLabel position="stacked">Phone Number</IonLabel>
+                  <IonInput 
+                    required 
+                    type="tel"
+                    value={phoneNumber} 
+                    onIonInput={(e) => setPhoneNumber(e.detail.value!)} 
+                    placeholder="09xx xxx xxxx" 
                   />
                 </IonItem>
 

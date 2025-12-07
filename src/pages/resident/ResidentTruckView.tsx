@@ -11,33 +11,25 @@ import { databaseService } from '../../services/database';
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
   const mapRef = useRef<L.Map | null>(null);
-  const [truckMarker, setTruckMarker] = useState<L.Marker | null>(null);
-  const [truckLocation, setTruckLocation] = useState({ lat: 14.6803, lng: 121.0598 });
+  const truckMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const updateIntervalRef = useRef<number | null>(null);
 
-  // Mock truck data - replace with real API call later
-  const truckData = {
-    truckNo: 'BCG 11*4',
-    size: 'Large',
-    lat: 14.6803,
-    lng: 121.0598,
+  // Create truck icons with dynamic truck number (matching collector side design)
+  const createTruckIcon = (isRed: boolean, truckNumber: string) => {
+    return L.divIcon({
+      html: `
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="font-size: 28px;">🚛</div>
+          <div style="background: ${isRed ? '#ef4444' : 'white'}; color: ${isRed ? 'white' : '#1f2937'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); white-space: nowrap;">
+            ${truckNumber}
+          </div>
+        </div>
+      `,
+      className: isRed ? 'watch-truck-icon watch-truck-icon--red' : 'watch-truck-icon watch-truck-icon--white',
+      iconSize: [60, 50],
+      iconAnchor: [30, 45],
+    });
   };
-
-  const truckIcon = L.divIcon({
-    html: '🚛',
-    className: 'watch-truck-icon watch-truck-icon--white',
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-  });
-
-  const truckFullIcon = L.divIcon({
-    html: '🚛',
-    className: 'watch-truck-icon watch-truck-icon--red',
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
-  });
-
-  const [truckIsFull, setTruckIsFull] = useState(false);
 
 
   // Validate GPS coordinates
@@ -54,6 +46,98 @@ const ResidentTruckView: React.FC = () => {
     );
   };
 
+  // Create truck popup with report functionality
+  const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number) => {
+    const popupContent = document.createElement('div');
+    popupContent.style.cssText = `
+      background: white;
+      border-radius: 12px;
+      padding: 0;
+      min-width: 220px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    `;
+    
+    popupContent.innerHTML = `
+      <div style="
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #e5e7eb;
+      ">
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <div style="font-size: 1.2rem;">🚛</div>
+          <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937;">Truck Information</div>
+        </div>
+        <button 
+          id="truck-close-btn-${truckNo}"
+          style="
+            background: none;
+            border: none;
+            font-size: 1.2rem;
+            color: #6b7280;
+            cursor: pointer;
+            padding: 0;
+            width: 24px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+          "
+          onmouseover="this.style.color='#1f2937'"
+          onmouseout="this.style.color='#6b7280'"
+        >×</button>
+      </div>
+      <div style="padding: 0.75rem 1rem;">
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: #1f2937;">Truck No:</strong> 
+          <span style="color: #1f2937;">${truckNo}</span>
+        </div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: #1f2937;">Collector:</strong> 
+          <span style="color: #1f2937;">${collectorName || 'N/A'}</span>
+        </div>
+        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;">
+          <strong style="color: #1f2937;">Truck Size:</strong> 
+          <span style="color: #1f2937;">Large</span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem; margin-bottom: 0.5rem;">
+          <span style="
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: ${isFull ? '#ef4444' : '#16a34a'};
+            display: inline-block;
+          "></span>
+          <span style="color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 500;">
+            ${isFull ? 'Full' : 'Available'}
+          </span>
+        </div>
+        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
+          Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+        </div>
+        <button 
+          id="truck-report-btn-${truckNo}"
+          style="
+            width: 100%;
+            padding: 0.6rem 1rem;
+            background: #16a34a;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+          "
+        >⚠️ Report Issue</button>
+      </div>
+    `;
+    
+    return popupContent;
+  };
+
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
 
@@ -61,121 +145,97 @@ const ResidentTruckView: React.FC = () => {
     setTimeout(() => {
       if (!mapRef.current) return;
 
-      // Use current truck location state (which may be updated in real-time)
-      const currentLat = truckLocation.lat;
-      const currentLng = truckLocation.lng;
-
-      // Validate truck coordinates first
-      if (!isValidCoordinate(currentLat, currentLng)) {
-        console.error('Invalid truck coordinates:', currentLat, currentLng);
-        return;
-      }
-
-      // Use actual truck location (not user's GPS)
-      const truckLatLng: L.LatLngExpression = [currentLat, currentLng];
-      
-      // Center map on truck location
-      mapRef.current.setView(truckLatLng, 16);
-      
-      // Check truck status and use appropriate icon
-      databaseService.init().then(async () => {
-        if (!mapRef.current) return;
-        
-        const status = await databaseService.getTruckStatus('BCG 11*4');
-        const isFull = status?.isFull || false;
-        setTruckIsFull(isFull);
-        
-        // Place truck marker at actual truck location with appropriate icon
-        const icon = isFull ? truckFullIcon : truckIcon;
-        const marker = L.marker(truckLatLng, { icon }).addTo(mapRef.current);
-        setTruckMarker(marker);
-        
-        // Create popup content with report button and status
-        const popupContent = document.createElement('div');
-        popupContent.style.textAlign = 'center';
-        popupContent.style.padding = '0.75rem';
-        popupContent.style.minWidth = '200px';
-        popupContent.innerHTML = `
-          <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 600;">
-            ${isFull ? '🔴 TRUCK FULL' : '🟢 Truck Available'}
-          </div>
-          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
-            Lat: ${currentLat.toFixed(6)}, Lng: ${currentLng.toFixed(6)}
-          </div>
-          <button id="truck-report-btn" style="
-            width: 100%;
-            padding: 0.6rem 1rem;
-            background: #16a34a;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-          ">⚠️ Report Issue</button>
-        `;
-        
-        marker.bindPopup(popupContent);
-        
-        marker.on('popupopen', () => {
-          const btn = document.getElementById('truck-report-btn');
-          if (btn) {
-            btn.onclick = () => {
-              history.push({
-                pathname: '/resident/report',
-                state: { truckNo: truckData.truckNo }
+      // Load and display all collector trucks on the map
+      const loadAllTrucks = async () => {
+        try {
+          await databaseService.init();
+          
+          // Get all collector accounts
+          const collectors = await databaseService.getAccountsByRole('collector');
+          
+          const truckPositions: L.LatLngExpression[] = [];
+          
+          // Add markers for all collector trucks (only those with valid accounts and truck numbers)
+          for (const collector of collectors) {
+            // Only show trucks that have valid accounts with truck numbers
+            if (collector.id && collector.truckNo && collector.truckNo.trim() !== '') {
+              // Get truck status
+              const status = await databaseService.getTruckStatus(collector.truckNo);
+              // Only show trucks that are actively collecting
+              if (!status || !status.isCollecting) {
+                continue; // Skip trucks that are not collecting
+              }
+              const isFull = status.isFull || false;
+              
+              // Use default location (you can enhance this to get actual GPS location)
+              // For now, placing them at different locations around the center
+              const baseLat = 14.683726;
+              const baseLng = 121.076224;
+              const offset = collectors.indexOf(collector) * 0.002; // Small offset for each truck
+              
+              const truckLat = baseLat + offset;
+              const truckLng = baseLng + offset;
+              
+              if (!isValidCoordinate(truckLat, truckLng)) continue;
+              
+              const icon = createTruckIcon(isFull, collector.truckNo);
+              const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
+              
+              // Create popup with report functionality
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
+              marker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
               });
-            };
-          }
-        });
-      }).catch((error) => {
-        console.error('Error initializing database:', error);
-        // Fallback: create marker without status check
-        if (!mapRef.current) return;
-        const marker = L.marker(truckLatLng, { icon: truckIcon }).addTo(mapRef.current);
-        setTruckMarker(marker);
-        
-        const popupContent = document.createElement('div');
-        popupContent.style.textAlign = 'center';
-        popupContent.style.padding = '0.75rem';
-        popupContent.style.minWidth = '200px';
-        popupContent.innerHTML = `
-          <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
-          <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
-          <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
-            Lat: ${currentLat.toFixed(6)}, Lng: ${currentLng.toFixed(6)}
-          </div>
-          <button id="truck-report-btn-fallback" style="
-            width: 100%;
-            padding: 0.6rem 1rem;
-            background: #16a34a;
-            color: white;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 0.9rem;
-            margin-top: 0.5rem;
-          ">⚠️ Report Issue</button>
-        `;
-        marker.bindPopup(popupContent);
-        marker.on('popupopen', () => {
-          const btn = document.getElementById('truck-report-btn-fallback');
-          if (btn) {
-            btn.onclick = () => {
-              history.push({
-                pathname: '/resident/report',
-                state: { truckNo: truckData.truckNo }
+              
+              // Add click handlers for report button and close button
+              marker.on('popupopen', () => {
+                // Report button handler
+                const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
+                if (reportBtn) {
+                  reportBtn.onclick = () => {
+                    history.push({
+                      pathname: '/resident/report',
+                      state: { truckNo: collector.truckNo }
+                    });
+                  };
+                }
+                
+                // Close button handler
+                const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    marker.closePopup();
+                  };
+                }
               });
-            };
+              
+              // Store marker reference
+              truckMarkersRef.current.set(collector.truckNo, marker);
+              truckPositions.push([truckLat, truckLng]);
+            }
           }
-        });
-      });
+          
+          // Fit map bounds to show all trucks
+          if (truckPositions.length > 0 && mapRef.current) {
+            if (truckPositions.length === 1) {
+              mapRef.current.setView(truckPositions[0], 16);
+            } else {
+              mapRef.current.fitBounds(L.latLngBounds(truckPositions), { padding: [50, 50] });
+            }
+          } else if (mapRef.current) {
+            // Default center if no trucks found
+            mapRef.current.setView([14.683726, 121.076224], 16);
+          }
+        } catch (error) {
+          console.error('Error loading trucks:', error);
+          if (mapRef.current) {
+            mapRef.current.setView([14.683726, 121.076224], 16);
+          }
+        }
+      };
+
+      loadAllTrucks();
 
       // Optionally add user location marker if GPS is available (for reference)
       if (navigator.geolocation) {
@@ -204,131 +264,99 @@ const ResidentTruckView: React.FC = () => {
           { enableHighAccuracy: true, timeout: 5000 },
         );
       }
-
-      // Set up periodic location updates (simulating real-time tracking)
-      // In production, this should fetch from your backend API
-      // Note: This interval will be set up in a separate useEffect after marker is created
     }, 300);
   };
 
-  // Check truck status on mount and set up polling
+  // Set up periodic status updates for all trucks
   useEffect(() => {
-    const checkTruckStatus = async () => {
+    const updateTruckStatuses = async () => {
       try {
         await databaseService.init();
-        const status = await databaseService.getTruckStatus('BCG 11*4');
-        if (status) {
-          setTruckIsFull(status.isFull);
+        const collectors = await databaseService.getAccountsByRole('collector');
+        
+        for (const collector of collectors) {
+          if (collector.id && collector.truckNo && collector.truckNo.trim() !== '') {
+            const status = await databaseService.getTruckStatus(collector.truckNo);
+            const marker = truckMarkersRef.current.get(collector.truckNo);
+            
+            // If truck is not collecting, remove it from map
+            if (!status || !status.isCollecting) {
+              if (marker && mapRef.current) {
+                mapRef.current.removeLayer(marker);
+                truckMarkersRef.current.delete(collector.truckNo);
+              }
+              continue;
+            }
+            
+            if (marker && mapRef.current) {
+              const isFull = status.isFull || false;
+              
+              // Update icon based on status
+              const icon = createTruckIcon(isFull, collector.truckNo);
+              marker.setIcon(icon);
+              
+              // Update popup with new status
+              const latlng = marker.getLatLng();
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, latlng.lat, latlng.lng);
+              marker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
+              });
+              
+              // Re-add click handlers
+              marker.off('popupopen');
+              marker.on('popupopen', () => {
+                // Report button handler
+                const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
+                if (reportBtn) {
+                  reportBtn.onclick = () => {
+                    history.push({
+                      pathname: '/resident/report',
+                      state: { truckNo: collector.truckNo }
+                    });
+                  };
+                }
+                
+                // Close button handler
+                const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    marker.closePopup();
+                  };
+                }
+              });
+            }
+          }
         }
       } catch (error) {
-        console.error('Error checking truck status:', error);
+        console.error('Error updating truck statuses:', error);
       }
     };
 
-    checkTruckStatus();
-
-    // Set up periodic status updates
-    const statusInterval = setInterval(checkTruckStatus, 5000); // Check every 5 seconds
+    // Update statuses immediately and then periodically
+    updateTruckStatuses();
+    const statusInterval = setInterval(updateTruckStatuses, 10000); // Check every 10 seconds
 
     return () => {
       clearInterval(statusInterval);
     };
-  }, []);
+  }, [history]);
 
-  // Set up periodic location updates when marker is created
+  // Cleanup markers on unmount
   useEffect(() => {
-    if (!truckMarker) return;
-
-    // Set up periodic location updates (simulating real-time tracking)
-    // In production, this should fetch from your backend API
-    updateIntervalRef.current = window.setInterval(() => {
-      // TODO: Replace with actual API call to get truck location
-      // Example: fetchTruckLocation(truckData.truckNo).then(location => {
-      //   if (isValidCoordinate(location.lat, location.lng)) {
-      //     setTruckLocation({ lat: location.lat, lng: location.lng });
-      //   }
-      // });
-      
-      // For now, we'll just check if the location state has changed
-      // The location will be updated via setTruckLocation when API is integrated
-    }, 10000); // Update every 10 seconds (adjust as needed)
-
     return () => {
-      if (updateIntervalRef.current !== null) {
-        clearInterval(updateIntervalRef.current);
-        updateIntervalRef.current = null;
-      }
-    };
-  }, [truckMarker]);
-
-  // Update truck marker when location or status changes
-  useEffect(() => {
-    if (truckMarker && isValidCoordinate(truckLocation.lat, truckLocation.lng)) {
-      const currentPos = truckMarker.getLatLng();
-      // Only update if position actually changed (avoid unnecessary updates)
-      if (Math.abs(currentPos.lat - truckLocation.lat) > 0.0001 || Math.abs(currentPos.lng - truckLocation.lng) > 0.0001) {
-        truckMarker.setLatLng([truckLocation.lat, truckLocation.lng]);
-      }
-      
-      // Update icon based on status
-      truckMarker.setIcon(truckIsFull ? truckFullIcon : truckIcon);
-      
-      // Update popup with new coordinates and status
-      const popupContent = document.createElement('div');
-      popupContent.style.textAlign = 'center';
-      popupContent.style.padding = '0.75rem';
-      popupContent.style.minWidth = '200px';
-      popupContent.innerHTML = `
-        <div style="font-weight: 600; margin-bottom: 0.75rem; font-size: 1rem;">🚛 Truck Information</div>
-        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck No:</strong> ${truckData.truckNo}</div>
-        <div style="font-size: 0.9rem; margin-bottom: 0.5rem;"><strong>Truck Size:</strong> ${truckData.size}</div>
-        <div style="font-size: 0.9rem; margin-bottom: 0.5rem; color: ${truckIsFull ? '#ef4444' : '#16a34a'}; font-weight: 600;">
-          ${truckIsFull ? '🔴 TRUCK FULL' : '🟢 Truck Available'}
-        </div>
-        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
-          Lat: ${truckLocation.lat.toFixed(6)}, Lng: ${truckLocation.lng.toFixed(6)}
-        </div>
-        <button id="truck-report-btn-updated" style="
-          width: 100%;
-          padding: 0.6rem 1rem;
-          background: #16a34a;
-          color: white;
-          border: none;
-          border-radius: 8px;
-          cursor: pointer;
-          font-weight: 600;
-          font-size: 0.9rem;
-          margin-top: 0.5rem;
-        ">⚠️ Report Issue</button>
-      `;
-      
-      truckMarker.bindPopup(popupContent);
-      
-      truckMarker.on('popupopen', () => {
-        const btn = document.getElementById('truck-report-btn-updated');
-        if (btn) {
-          btn.onclick = () => {
-            history.push({
-              pathname: '/resident/report',
-              state: { truckNo: truckData.truckNo }
-            });
-          };
+      truckMarkersRef.current.forEach((marker) => {
+        if (mapRef.current) {
+          mapRef.current.removeLayer(marker);
         }
       });
-    }
-  }, [truckLocation, truckMarker, truckIsFull, history, truckData]);
-
-  useEffect(() => {
-    return () => {
-      if (truckMarker) {
-        truckMarker.remove();
-      }
+      truckMarkersRef.current.clear();
       if (updateIntervalRef.current !== null) {
         clearInterval(updateIntervalRef.current);
         updateIntervalRef.current = null;
       }
     };
-  }, [truckMarker]);
+  }, []);
 
   const AnyMapView = MapView as React.ComponentType<any>;
 
@@ -358,7 +386,7 @@ const ResidentTruckView: React.FC = () => {
               borderRadius: 0,
             }}
           >
-            <AnyMapView id="resident-truck-map" center={[truckLocation.lat, truckLocation.lng]} zoom={16} onMapReady={handleMapReady} />
+            <AnyMapView id="resident-truck-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
           </div>
         </div>
       </IonContent>
