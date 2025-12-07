@@ -216,12 +216,13 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       return;
     }
 
-    // If truck is full, empty it first
+    // If truck is full, empty it first and prepare to start collecting
     if (truckIsFull) {
       try {
         const userId = getCurrentUserId();
         if (userId) {
-          await databaseService.updateTruckStatus(truckNo, false, userId);
+          // Set isFull = false, but don't set isCollecting yet (will be set when route page loads)
+          await databaseService.updateTruckStatus(truckNo, false, userId, false);
           setTruckIsFull(false);
         }
       } catch (error) {
@@ -235,6 +236,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         if (mapRef.current) {
           mapRef.current.setView([latitude, longitude], 16);
         }
+        // Start collecting - this will navigate to route page which sets isCollecting = true
         onStartCollecting();
       },
       () => {

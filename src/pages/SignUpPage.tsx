@@ -170,10 +170,11 @@ const SignUpPage: React.FC = () => {
       return;
     }
 
-    // Phone number validation - must be exactly 11 digits
-    const phoneRegex = /^[0-9]{11}$/;
-    if (!phoneRegex.test(phoneNumber.replace(/\D/g, ''))) {
-      setAlertMessage('Please enter a valid 11-digit phone number');
+    // Phone number validation - must be exactly 11 digits and start with 09
+    const phoneDigits = phoneNumber.replace(/\D/g, '');
+    const phoneRegex = /^09[0-9]{9}$/;
+    if (!phoneRegex.test(phoneDigits)) {
+      setAlertMessage('Please enter a valid 11-digit phone number starting with 09');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -619,7 +620,21 @@ const SignUpPage: React.FC = () => {
                     value={phoneNumber} 
                     onIonInput={(e) => {
                       // Only allow digits and limit to 11 digits - remove any non-numeric characters
-                      const value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 11);
+                      let value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 11);
+                      
+                      // Ensure it starts with 09 - if user types something else, auto-correct
+                      if (value.length === 1 && value !== '0') {
+                        value = '0';
+                      } else if (value.length === 2 && value[0] === '0' && value[1] !== '9') {
+                        value = '09';
+                      } else if (value.length >= 2 && value[0] !== '0') {
+                        // If first digit is not 0, replace with 0
+                        value = '0' + value.slice(1, 11);
+                      } else if (value.length >= 2 && value[0] === '0' && value[1] !== '9') {
+                        // If second digit is not 9, replace with 9
+                        value = '09' + value.slice(2, 11);
+                      }
+                      
                       setPhoneNumber(value);
                     }}
                     onKeyDown={(e) => {
@@ -631,7 +646,7 @@ const SignUpPage: React.FC = () => {
                         e.preventDefault();
                       }
                     }}
-                    placeholder="09123456789 (11 digits)" 
+                    placeholder="09xxxxxxxxx (must start with 09)" 
                     maxlength={11}
                   />
                 </IonItem>
