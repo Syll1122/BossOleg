@@ -36,7 +36,7 @@ const LoginPage: React.FC = () => {
     }
 
     try {
-      // Authenticate against local database
+      // Authenticate against Supabase
       const account = await databaseService.authenticate(identifier.trim(), password);
 
       if (account) {

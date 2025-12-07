@@ -7,17 +7,27 @@ import { useHistory } from 'react-router-dom';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { databaseService } from '../../services/database';
+import NotificationBell from '../../components/NotificationBell';
+import { calculateDistance, isValidCoordinate } from '../../utils/coordinates';
+import { getCurrentUserId } from '../../utils/auth';
+import { requestGeolocation } from '../../utils/geolocation';
 
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkersRef = useRef<Map<string, L.Marker>>(new Map());
+  const residentMarkerRef = useRef<L.Marker | null>(null); // Reference to resident location marker
   const updateIntervalRef = useRef<number | null>(null);
   const previousTruckStatusesRef = useRef<Map<string, { isCollecting: boolean; isFull: boolean }>>(new Map());
   
   // Toast state for notifications
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  
+  // Resident location and proximity tracking
+  const residentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+  const notifiedTrucksRef = useRef<Set<string>>(new Set()); // Track which trucks have already notified
+  const NOTIFICATION_RADIUS_METERS = 400; // 400 meters radius
 
   // Create truck icons with dynamic truck number (matching collector side design)
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
@@ -33,6 +43,30 @@ const ResidentTruckView: React.FC = () => {
       className: isRed ? 'watch-truck-icon watch-truck-icon--red' : 'watch-truck-icon watch-truck-icon--white',
       iconSize: [60, 50],
       iconAnchor: [30, 45],
+    });
+  };
+
+  // Create people icon for resident location
+  const createPeopleIcon = () => {
+    return L.divIcon({
+      html: `
+        <div style="
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 40px;
+          height: 40px;
+          background: #3b82f6;
+          border-radius: 50%;
+          border: 3px solid white;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        ">
+          <div style="font-size: 24px; line-height: 1;">👤</div>
+        </div>
+      `,
+      className: 'resident-location-icon',
+      iconSize: [40, 40],
+      iconAnchor: [20, 40],
     });
   };
 
@@ -186,27 +220,16 @@ const ResidentTruckView: React.FC = () => {
                 isFull: status.isFull || false
               });
               
-              // Use GPS coordinates from truck_status if available, otherwise use default location
-              let truckLat: number;
-              let truckLng: number;
-              
-              if (status.latitude !== undefined && status.longitude !== undefined && 
-                  isValidCoordinate(status.latitude, status.longitude)) {
-                // Use actual GPS coordinates from database
-                truckLat = status.latitude;
-                truckLng = status.longitude;
-                console.log(`Using GPS coordinates for truck ${collector.truckNo}:`, truckLat, truckLng);
-              } else {
-                // Fallback to default location if GPS not available
-                const baseLat = 14.683726;
-                const baseLng = 121.076224;
-                const offset = collectors.indexOf(collector) * 0.002;
-                truckLat = baseLat + offset;
-                truckLng = baseLng + offset;
-                console.log(`Using default location for truck ${collector.truckNo}:`, truckLat, truckLng);
+              // Only show trucks with valid GPS coordinates - no default locations
+              if (status.latitude === undefined || status.longitude === undefined || 
+                  !isValidCoordinate(status.latitude, status.longitude)) {
+                console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
+                continue;
               }
               
-              if (!isValidCoordinate(truckLat, truckLng)) continue;
+              const truckLat = status.latitude;
+              const truckLng = status.longitude;
+              console.log(`Using GPS coordinates for truck ${collector.truckNo}:`, truckLat, truckLng);
               
               const icon = createTruckIcon(isFull, collector.truckNo);
               const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
@@ -249,31 +272,39 @@ const ResidentTruckView: React.FC = () => {
               // Store marker reference
               truckMarkersRef.current.set(collector.truckNo, marker);
               truckPositions.push([truckLat, truckLng]);
+              
+              // Check proximity when marker is first added (only for collecting trucks)
+              if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
+                checkTruckProximity(
+                  collector.truckNo,
+                  truckLat,
+                  truckLng,
+                  collector.name || 'Collector'
+                );
+              }
             }
           }
           
-          // Fit map bounds to show all trucks
+          // Fit map bounds to show all trucks (only if we have trucks with GPS)
           if (truckPositions.length > 0 && mapRef.current) {
             if (truckPositions.length === 1) {
               mapRef.current.setView(truckPositions[0], 16);
             } else {
               mapRef.current.fitBounds(L.latLngBounds(truckPositions), { padding: [50, 50] });
             }
-          } else if (mapRef.current) {
-            // Default center if no trucks found
-            mapRef.current.setView([14.683726, 121.076224], 16);
+          } else if (mapRef.current && residentLocationRef.current) {
+            // Center on resident location if no trucks are visible
+            mapRef.current.setView([residentLocationRef.current.lat, residentLocationRef.current.lng], 16);
           }
         } catch (error) {
           console.error('Error loading trucks:', error);
-          if (mapRef.current) {
-            mapRef.current.setView([14.683726, 121.076224], 16);
-          }
+          // Don't set default location - just log the error
         }
       };
 
       loadAllTrucks();
 
-      // Optionally add user location marker if GPS is available (for reference)
+      // Get and track resident location for proximity notifications
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -282,15 +313,41 @@ const ResidentTruckView: React.FC = () => {
             const userLng = pos.coords.longitude;
             
             if (isValidCoordinate(userLat, userLng)) {
+              // Store resident location for proximity checks
+              residentLocationRef.current = { lat: userLat, lng: userLng };
+              console.log('Resident location set for proximity checks:', userLat, userLng);
+              
               const userLatLng: L.LatLngExpression = [userLat, userLng];
-              // Add user location marker (blue circle) - user's own location
-              L.circleMarker(userLatLng, {
-                radius: 8,
-                fillColor: '#3b82f6',
-                color: '#ffffff',
-                weight: 2,
-                fillOpacity: 0.8,
-              }).bindPopup('Your Location').addTo(mapRef.current);
+              
+              // Remove existing resident marker if it exists
+              if (residentMarkerRef.current && mapRef.current) {
+                mapRef.current.removeLayer(residentMarkerRef.current);
+                residentMarkerRef.current = null;
+              }
+              
+              // Add user location marker with people icon - user's own location
+              const peopleIcon = createPeopleIcon();
+              const residentMarker = L.marker(userLatLng, { icon: peopleIcon })
+                .bindPopup('Your Location')
+                .addTo(mapRef.current);
+              residentMarkerRef.current = residentMarker;
+              
+              // Check proximity for all existing trucks now that we have resident location
+              truckMarkersRef.current.forEach((marker, truckNo) => {
+                const latlng = marker.getLatLng();
+                // Get collector info for the truck
+                databaseService.getAccountsByRole('collector').then(collectors => {
+                  const collector = collectors.find(c => c.truckNo === truckNo);
+                  if (collector) {
+                    checkTruckProximity(
+                      truckNo,
+                      latlng.lat,
+                      latlng.lng,
+                      collector.name || 'Collector'
+                    );
+                  }
+                }).catch(err => console.error('Error checking proximity:', err));
+              });
             }
           },
           () => {
@@ -299,8 +356,102 @@ const ResidentTruckView: React.FC = () => {
           },
           { enableHighAccuracy: true, timeout: 5000 },
         );
+        
+        // Also set up watchPosition to update resident location as they move
+        let watchId: number | null = null;
+        if (navigator.geolocation.watchPosition) {
+          watchId = navigator.geolocation.watchPosition(
+            (pos) => {
+              const userLat = pos.coords.latitude;
+              const userLng = pos.coords.longitude;
+              
+              if (isValidCoordinate(userLat, userLng)) {
+                residentLocationRef.current = { lat: userLat, lng: userLng };
+                console.log('Resident location updated:', userLat, userLng);
+                
+                // Update resident marker position if it exists
+                if (residentMarkerRef.current && mapRef.current) {
+                  residentMarkerRef.current.setLatLng([userLat, userLng]);
+                } else if (mapRef.current) {
+                  // Create marker if it doesn't exist
+                  const userLatLng: L.LatLngExpression = [userLat, userLng];
+                  const peopleIcon = createPeopleIcon();
+                  const residentMarker = L.marker(userLatLng, { icon: peopleIcon })
+                    .bindPopup('Your Location')
+                    .addTo(mapRef.current);
+                  residentMarkerRef.current = residentMarker;
+                }
+              }
+            },
+            (error) => {
+              console.error('Error watching resident location:', error);
+            },
+            { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
+          );
+        }
+        
+        // Store watchId for cleanup (if needed in future)
+        return () => {
+          if (watchId !== null && navigator.geolocation) {
+            navigator.geolocation.clearWatch(watchId);
+          }
+        };
       }
     }, 300);
+  };
+
+  // Check if truck is within notification radius and create notification
+  const checkTruckProximity = async (
+    truckNo: string,
+    truckLat: number,
+    truckLng: number,
+    collectorName: string
+  ) => {
+    // Only check if resident location is available
+    if (!residentLocationRef.current) return;
+    
+    const { lat: residentLat, lng: residentLng } = residentLocationRef.current;
+    
+    // Calculate distance in kilometers
+    const distanceKm = calculateDistance(residentLat, residentLng, truckLat, truckLng);
+    
+    // Convert to meters
+    const distanceMeters = distanceKm * 1000;
+    
+    // Check if truck is within 400m radius
+    if (distanceMeters <= NOTIFICATION_RADIUS_METERS) {
+      // Check if we've already notified about this truck
+      if (!notifiedTrucksRef.current.has(truckNo)) {
+        // Create notification
+        const userId = getCurrentUserId();
+        if (userId) {
+          try {
+            await databaseService.createNotification({
+              userId,
+              title: '🚛 Truck Nearby',
+              message: `Truck ${truckNo} (${collectorName}) is within 400m of your location!`,
+              type: 'info',
+              read: false,
+              link: '/resident/truck',
+            });
+            
+            // Mark this truck as notified
+            notifiedTrucksRef.current.add(truckNo);
+            
+            console.log(`Notification created: Truck ${truckNo} is ${Math.round(distanceMeters)}m away`);
+          } catch (error) {
+            console.error('Error creating proximity notification:', error);
+          }
+        }
+      }
+    } else {
+      // Truck is outside radius - remove from notified set so it can notify again if it comes back
+      // This allows re-notification if the truck leaves and comes back within radius
+      if (notifiedTrucksRef.current.has(truckNo)) {
+        notifiedTrucksRef.current.delete(truckNo);
+        console.log(`Truck ${truckNo} left the 400m radius. Will notify again if it comes back.`);
+      }
+    }
   };
 
   // Set up periodic status updates for all trucks
@@ -334,6 +485,8 @@ const ResidentTruckView: React.FC = () => {
                 isCollecting: false,
                 isFull: false
               });
+              // Remove from notified set when truck stops collecting
+              notifiedTrucksRef.current.delete(collector.truckNo);
               continue;
             }
             
@@ -350,6 +503,16 @@ const ResidentTruckView: React.FC = () => {
               if (status.latitude !== undefined && status.longitude !== undefined && 
                   isValidCoordinate(status.latitude, status.longitude)) {
                 marker.setLatLng([status.latitude, status.longitude]);
+                
+                // Check proximity and create notification if within 400m (only for collecting trucks)
+                if (status.isCollecting) {
+                  checkTruckProximity(
+                    collector.truckNo,
+                    status.latitude,
+                    status.longitude,
+                    collector.name || 'Collector'
+                  );
+                }
               }
               
               // Update icon based on status
@@ -388,26 +551,15 @@ const ResidentTruckView: React.FC = () => {
               });
             } else if (!marker && mapRef.current && (status.isCollecting || status.isFull)) {
               // Truck is collecting or full but marker doesn't exist - add it
-              // Use GPS coordinates from truck_status if available, otherwise use default
-              let truckLat: number;
-              let truckLng: number;
-              
-              if (status.latitude !== undefined && status.longitude !== undefined && 
-                  isValidCoordinate(status.latitude, status.longitude)) {
-                // Use actual GPS coordinates from database
-                truckLat = status.latitude;
-                truckLng = status.longitude;
-              } else {
-                // Fallback to default location if GPS not available
-                const baseLat = 14.683726;
-                const baseLng = 121.076224;
-                const collectors = await databaseService.getAccountsByRole('collector');
-                const offset = collectors.findIndex(c => c.truckNo === collector.truckNo) * 0.002;
-                truckLat = baseLat + offset;
-                truckLng = baseLng + offset;
+              // Only show trucks with valid GPS coordinates - no default locations
+              if (status.latitude === undefined || status.longitude === undefined || 
+                  !isValidCoordinate(status.latitude, status.longitude)) {
+                console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
+                continue;
               }
               
-              if (isValidCoordinate(truckLat, truckLng)) {
+              const truckLat = status.latitude;
+              const truckLng = status.longitude;
                 const isFull = status.isFull || false;
                 const icon = createTruckIcon(isFull, collector.truckNo);
                 const newMarker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current);
@@ -438,6 +590,16 @@ const ResidentTruckView: React.FC = () => {
                 });
                 
                 truckMarkersRef.current.set(collector.truckNo, newMarker);
+                
+                // Check proximity when new marker is added (only for collecting trucks)
+                if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
+                  checkTruckProximity(
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
+                }
               }
             }
           }
@@ -484,6 +646,9 @@ const ResidentTruckView: React.FC = () => {
             </IonButton>
           </IonButtons>
           <IonTitle>Track Truck</IonTitle>
+          <IonButtons slot="end">
+            <NotificationBell />
+          </IonButtons>
         </IonToolbar>
       </IonHeader>
 

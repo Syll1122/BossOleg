@@ -1,0 +1,48 @@
+/* NotificationBell.css */
+/* Styles for notification bell component */
+
+.notification-item {
+  transition: background-color 0.2s ease;
+}
+
+.notification-item:hover {
+  background-color: #f9fafb;
+}
+
+.notification-unread {
+  background-color: #f0f9ff;
+  font-weight: 600;
+}
+
+.notification-read {
+  background-color: #ffffff;
+  opacity: 0.8;
+}
+
+/* Ensure proper scrolling */
+.notification-scroll-container {
+  overflow-y: auto !important;
+  overflow-x: hidden !important;
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Custom scrollbar styling */
+.notification-scroll-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.notification-scroll-container::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 10px;
+}
+
+.notification-scroll-container::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 10px;
+}
+
+.notification-scroll-container::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}
+

@@ -16,6 +16,9 @@ import MapView from '../../components/MapView';
 import { useHistory } from 'react-router-dom';
 import { logout, getCurrentUserId } from '../../utils/auth';
 import { databaseService } from '../../services/database';
+import NotificationBell from '../../components/NotificationBell';
+import { requestGeolocation, getGeolocationErrorMessage, isSecureContext } from '../../utils/geolocation';
+import { isValidCoordinate } from '../../utils/coordinates';
 
 interface ScheduleLocation {
   name: string;
@@ -31,6 +34,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const mapRef = useRef<L.Map | null>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [showLocationError, setShowLocationError] = useState(false);
+  const [locationErrorMessage, setLocationErrorMessage] = useState('');
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
   const [truckIsFull, setTruckIsFull] = useState(false);
   const [collectorName, setCollectorName] = useState('Manong Collector');
@@ -233,11 +237,57 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     // Wait a bit for map to be fully ready
     setTimeout(() => {
       loadAllTrucks();
+      
+      // Get collector location and add radius circle
+      if (navigator.geolocation) {
+        requestGeolocation(
+          (pos) => {
+            if (!mapRef.current) return;
+            const userLat = pos.coords.latitude;
+            const userLng = pos.coords.longitude;
+            
+            if (isValidCoordinate(userLat, userLng)) {
+              const userLatLng: L.LatLngExpression = [userLat, userLng];
+              // Add user location marker (blue circle) - user's own location
+              L.circleMarker(userLatLng, {
+                radius: 8,
+                fillColor: '#3b82f6',
+                color: '#ffffff',
+                weight: 2,
+                fillOpacity: 0.8,
+              }).bindPopup('Your Location').addTo(mapRef.current);
+              
+              // Add 400m radius circle for visual reference
+              L.circle(userLatLng, {
+                radius: 400, // 400 meters
+                color: '#16a34a',
+                fillColor: '#16a34a',
+                fillOpacity: 0.15,
+                weight: 2,
+                dashArray: '5, 5',
+              }).bindPopup('400m Notification Radius - Residents within this area will be notified').addTo(mapRef.current);
+            }
+          },
+          (error) => {
+            // Silently fail if user location can't be obtained
+            console.log('User location not available:', error);
+          },
+          { enableHighAccuracy: true, timeout: 5000 }
+        );
+      }
     }, 500);
   };
 
   const requestLocationAndStart = async () => {
-    if (!navigator.geolocation) {
+    // Check if we're on a secure context (HTTPS or localhost)
+    if (!isSecureContext() && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
+      setLocationErrorMessage(
+        'GPS requires HTTPS. Please access the app via https:// or use localhost.\n\n' +
+        'For network access from your phone:\n' +
+        '1. Use a service like ngrok (https://ngrok.com) to create an HTTPS tunnel\n' +
+        '2. Or set up HTTPS locally using mkcert\n' +
+        '3. Or access via localhost on your computer only'
+      );
       setShowLocationError(true);
       return;
     }
@@ -246,7 +296,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     // Don't set isFull = false here, let the route page handle it
     // This prevents the button from flickering back to "Start Collecting"
 
-    navigator.geolocation.getCurrentPosition(
+    requestGeolocation(
       (pos) => {
         const { latitude, longitude } = pos.coords;
         if (mapRef.current) {
@@ -256,10 +306,15 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         // Route page will set isFull = false and isCollecting = true
         onStartCollecting();
       },
-      () => {
+      (error) => {
+        if (error instanceof GeolocationPositionError) {
+          setLocationErrorMessage(getGeolocationErrorMessage(error));
+        } else {
+          setLocationErrorMessage(error.message || 'Failed to get location. Please try again.');
+        }
         setShowLocationError(true);
       },
-      { enableHighAccuracy: true, timeout: 8000 },
+      { enableHighAccuracy: true, timeout: 8000 }
     );
   };
 
@@ -321,20 +376,23 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{collectorName}</span>
             </div>
 
-            <IonButton
-              fill="clear"
-              style={{
-                '--color': '#1f2933',
-                backgroundColor: 'rgba(255,255,255,0.9)',
-                borderRadius: 999,
-                minWidth: 42,
-                height: 42,
-                boxShadow: '0 6px 14px rgba(15,23,42,0.18)',
-              }}
-              onClick={(e) => setMenuEvent(e.nativeEvent)}
-            >
-              <IonIcon icon={menuOutline} />
-            </IonButton>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <NotificationBell />
+              <IonButton
+                fill="clear"
+                style={{
+                  '--color': '#1f2933',
+                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  borderRadius: 999,
+                  minWidth: 42,
+                  height: 42,
+                  boxShadow: '0 6px 14px rgba(15,23,42,0.18)',
+                }}
+                onClick={(e) => setMenuEvent(e.nativeEvent)}
+              >
+                <IonIcon icon={menuOutline} />
+              </IonButton>
+            </div>
           </div>
 
           {/* Bottom sheet with schedule & start button */}
@@ -503,7 +561,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           isOpen={showLocationError}
           onDidDismiss={() => setShowLocationError(false)}
           header="Location unavailable"
-          message="We couldn’t access your location. Please enable GPS / location permissions and try again."
+          message={locationErrorMessage || "We couldn't access your location. Please enable GPS / location permissions and try again."}
           buttons={[{ text: 'OK', role: 'cancel' }]}
         />
 

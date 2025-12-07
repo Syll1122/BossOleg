@@ -302,7 +302,7 @@ const SignUpPage: React.FC = () => {
         }
       }
 
-      // Create account in local database
+      // Create account in Supabase
       await databaseService.createAccount({
         email: email.toLowerCase().trim(),
         username: username.trim(),

@@ -21,6 +21,7 @@ import { useHistory } from 'react-router-dom';
 import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline, closeOutline } from 'ionicons/icons';
 import { logout } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
+import NotificationBell from '../components/NotificationBell';
 
 interface ScheduleItem {
   day: string;
@@ -74,6 +75,7 @@ const Home: React.FC = () => {
         >
           <IonTitle>WATCH</IonTitle>
           <IonButtons slot="end">
+            <NotificationBell />
             <IonButton onClick={(e) => setMenuEvent(e.nativeEvent)}>
               <IonIcon icon={menuOutline} />
             </IonButton>

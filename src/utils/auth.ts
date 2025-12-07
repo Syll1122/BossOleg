@@ -5,7 +5,7 @@ import { databaseService } from '../services/database';
 
 /**
  * Logout the current user
- * Clears all stored user data from localStorage and database session
+ * Clears all stored user data from localStorage and Supabase session
  */
 export const logout = async (): Promise<void> => {
   // Get session token before clearing localStorage

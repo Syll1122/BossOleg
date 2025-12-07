@@ -2,7 +2,7 @@
 // Database service using Supabase (PostgreSQL)
 
 import { supabase } from './supabase';
-import { Account, UserRole, Report, TruckStatus } from '../models/types';
+import { Account, UserRole, Report, TruckStatus, Notification, PushSubscription } from '../models/types';
 
 class SupabaseDatabaseService {
   /**
@@ -340,18 +340,22 @@ class SupabaseDatabaseService {
     isFull: boolean, 
     updatedBy: string, 
     isCollecting?: boolean,
-    latitude?: number,
-    longitude?: number
+    latitude?: number | null,
+    longitude?: number | null
   ): Promise<TruckStatus> {
     // Get existing status to preserve values if not provided
     const existingStatus = await this.getTruckStatus(truckId);
+    
+    // If truck is not collecting and not full, clear GPS coordinates
+    const shouldClearCoordinates = !isFull && isCollecting === false;
     
     const status: TruckStatus = {
       id: truckId,
       isFull,
       isCollecting: isCollecting !== undefined ? isCollecting : (existingStatus?.isCollecting ?? false),
-      latitude: latitude !== undefined ? latitude : (existingStatus?.latitude),
-      longitude: longitude !== undefined ? longitude : (existingStatus?.longitude),
+      // Clear coordinates if truck is stopped, otherwise use provided value or preserve existing
+      latitude: shouldClearCoordinates ? undefined : (latitude !== undefined ? (latitude === null ? undefined : latitude) : (existingStatus?.latitude)),
+      longitude: shouldClearCoordinates ? undefined : (longitude !== undefined ? (longitude === null ? undefined : longitude) : (existingStatus?.longitude)),
       updatedAt: new Date().toISOString(),
       updatedBy,
     };
@@ -641,6 +645,197 @@ class SupabaseDatabaseService {
       const fallback = this.getDefaultBarangays();
       const searchLower = searchTerm.toLowerCase();
       return fallback.filter(b => b.name.toLowerCase().includes(searchLower));
+    }
+  }
+
+  // ========== NOTIFICATIONS METHODS ==========
+
+  /**
+   * Create a new notification
+   */
+  async createNotification(notification: Omit<Notification, 'id' | 'createdAt'>): Promise<Notification> {
+    const newNotification: Notification = {
+      ...notification,
+      id: this.generateId(),
+      createdAt: new Date().toISOString(),
+    };
+
+    const { data, error } = await supabase
+      .from('notifications')
+      .insert(newNotification)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data as Notification;
+  }
+
+  /**
+   * Get all notifications for a user
+   */
+  async getNotificationsByUserId(userId: string, unreadOnly: boolean = false): Promise<Notification[]> {
+    let query = supabase
+      .from('notifications')
+      .select('*')
+      .eq('userId', userId)
+      .order('createdAt', { ascending: false });
+
+    if (unreadOnly) {
+      query = query.eq('read', false);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data || []) as Notification[];
+  }
+
+  /**
+   * Mark notification as read
+   */
+  async markNotificationAsRead(notificationId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('id', notificationId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Mark all notifications as read for a user
+   */
+  async markAllNotificationsAsRead(userId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .update({ read: true })
+      .eq('userId', userId)
+      .eq('read', false);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Delete a notification
+   */
+  async deleteNotification(notificationId: string): Promise<void> {
+    const { error } = await supabase
+      .from('notifications')
+      .delete()
+      .eq('id', notificationId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Get unread notification count for a user
+   */
+  async getUnreadNotificationCount(userId: string): Promise<number> {
+    const { count, error } = await supabase
+      .from('notifications')
+      .select('*', { count: 'exact', head: true })
+      .eq('userId', userId)
+      .eq('read', false);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return count || 0;
+  }
+
+  // ========== PUSH SUBSCRIPTIONS METHODS ==========
+
+  /**
+   * Save push subscription
+   */
+  async savePushSubscription(subscription: Omit<PushSubscription, 'id' | 'createdAt'>): Promise<PushSubscription> {
+    const newSubscription: PushSubscription = {
+      ...subscription,
+      id: this.generateId(),
+      createdAt: new Date().toISOString(),
+    };
+
+    // Check if subscription already exists for this endpoint
+    const { data: existing } = await supabase
+      .from('push_subscriptions')
+      .select('id')
+      .eq('endpoint', subscription.endpoint)
+      .single();
+
+    if (existing) {
+      // Update existing subscription
+      const { data, error } = await supabase
+        .from('push_subscriptions')
+        .update({
+          userId: subscription.userId,
+          p256dh: subscription.p256dh,
+          auth: subscription.auth,
+        })
+        .eq('endpoint', subscription.endpoint)
+        .select()
+        .single();
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      return data as PushSubscription;
+    }
+
+    // Create new subscription
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .insert(newSubscription)
+      .select()
+      .single();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data as PushSubscription;
+  }
+
+  /**
+   * Get push subscriptions for a user
+   */
+  async getPushSubscriptionsByUserId(userId: string): Promise<PushSubscription[]> {
+    const { data, error } = await supabase
+      .from('push_subscriptions')
+      .select('*')
+      .eq('userId', userId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return (data || []) as PushSubscription[];
+  }
+
+  /**
+   * Delete push subscription
+   */
+  async deletePushSubscription(endpoint: string): Promise<void> {
+    const { error } = await supabase
+      .from('push_subscriptions')
+      .delete()
+      .eq('endpoint', endpoint);
+
+    if (error) {
+      throw new Error(error.message);
     }
   }
 }

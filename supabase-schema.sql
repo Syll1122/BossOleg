@@ -112,6 +112,54 @@ CREATE POLICY "Allow all access to user_sessions" ON user_sessions
   FOR ALL USING (true) WITH CHECK (true);
 
 -- ==========================================
+-- TABLE: notifications
+-- Stores in-app notifications for users
+-- ==========================================
+CREATE TABLE IF NOT EXISTS notifications (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  title TEXT NOT NULL,
+  message TEXT NOT NULL,
+  type TEXT NOT NULL CHECK (type IN ('info', 'success', 'warning', 'error')),
+  read BOOLEAN NOT NULL DEFAULT FALSE,
+  link TEXT, -- Optional link to navigate to when clicked
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for faster lookups
+CREATE INDEX IF NOT EXISTS idx_notifications_userid ON notifications("userId");
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(read);
+CREATE INDEX IF NOT EXISTS idx_notifications_createdat ON notifications("createdAt");
+
+-- ==========================================
+-- TABLE: push_subscriptions
+-- Stores web push notification subscriptions
+-- ==========================================
+CREATE TABLE IF NOT EXISTS push_subscriptions (
+  id TEXT PRIMARY KEY,
+  "userId" TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+  endpoint TEXT NOT NULL UNIQUE,
+  p256dh TEXT NOT NULL,
+  auth TEXT NOT NULL,
+  "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- Create indexes for faster lookups
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_userid ON push_subscriptions("userId");
+CREATE INDEX IF NOT EXISTS idx_push_subscriptions_endpoint ON push_subscriptions(endpoint);
+
+-- Enable RLS on new tables
+ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE push_subscriptions ENABLE ROW LEVEL SECURITY;
+
+-- Allow all operations for now
+CREATE POLICY "Allow all access to notifications" ON notifications
+  FOR ALL USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow all access to push_subscriptions" ON push_subscriptions
+  FOR ALL USING (true) WITH CHECK (true);
+
+-- ==========================================
 -- DONE!
 -- ==========================================
 -- After running this SQL:

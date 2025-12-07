@@ -5,6 +5,7 @@ import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonBut
 import { arrowBackOutline, documentTextOutline, listOutline } from 'ionicons/icons';
 import { useHistory, useLocation } from 'react-router-dom';
 import { databaseService } from '../../services/database';
+import NotificationBell from '../../components/NotificationBell';
 import useCurrentUser from '../../state/useCurrentUser';
 import { getCurrentUserId } from '../../utils/auth';
 
@@ -188,6 +189,9 @@ const ReportPage: React.FC = () => {
             </IonButton>
           </IonButtons>
           <IonTitle>Report Issue</IonTitle>
+          <IonButtons slot="end">
+            <NotificationBell />
+          </IonButtons>
         </IonToolbar>
       </IonHeader>
 

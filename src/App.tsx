@@ -28,27 +28,30 @@ import ResidentTruckView from './pages/resident/ResidentTruckView';
 import ProfilePage from './pages/resident/ProfilePage';
 import ReportPage from './pages/resident/ReportPage';
 import ReportsProgressPage from './pages/resident/ReportsProgressPage';
+import { NotificationProvider } from './contexts/NotificationContext';
 
 setupIonicReact();
 
 const App: React.FC = () => {
   return (
-    <IonApp>
-      <IonReactRouter>
-        <IonRouterOutlet>
-          <Route path="/" component={Home} exact />
-          <Route path="/login" component={LoginPage} exact />
-          <Route path="/signup" component={SignUpPage} exact />
-          <Route path="/collector" component={CollectorStack} />
-          <Route path="/collector/profile" component={ProfilePage} exact />
-          <Route path="/admin" component={AdminTabs} />
-          <Route path="/resident/truck" component={ResidentTruckView} exact />
-          <Route path="/resident/profile" component={ProfilePage} exact />
-          <Route path="/resident/report" component={ReportPage} exact />
-          <Route path="/resident/reports" component={ReportsProgressPage} exact />
-        </IonRouterOutlet>
-      </IonReactRouter>
-    </IonApp>
+    <NotificationProvider>
+      <IonApp>
+        <IonReactRouter>
+          <IonRouterOutlet>
+            <Route path="/" component={Home} exact />
+            <Route path="/login" component={LoginPage} exact />
+            <Route path="/signup" component={SignUpPage} exact />
+            <Route path="/collector" component={CollectorStack} />
+            <Route path="/collector/profile" component={ProfilePage} exact />
+            <Route path="/admin" component={AdminTabs} />
+            <Route path="/resident/truck" component={ResidentTruckView} exact />
+            <Route path="/resident/profile" component={ProfilePage} exact />
+            <Route path="/resident/report" component={ReportPage} exact />
+            <Route path="/resident/reports" component={ReportsProgressPage} exact />
+          </IonRouterOutlet>
+        </IonReactRouter>
+      </IonApp>
+    </NotificationProvider>
   );
 };
 

@@ -47,3 +47,23 @@ export interface TruckStatus {
   updatedAt: string;
   updatedBy: string; // Collector user ID
 }
+
+export interface Notification {
+  id: string;
+  userId: string; // User who should receive this notification
+  title: string;
+  message: string;
+  type: 'info' | 'success' | 'warning' | 'error';
+  read: boolean;
+  link?: string; // Optional link to navigate to when clicked
+  createdAt: string;
+}
+
+export interface PushSubscription {
+  id: string;
+  userId: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+  createdAt: string;
+}

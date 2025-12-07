@@ -203,13 +203,6 @@ const ProfilePage: React.FC = () => {
             </IonButton>
           </IonButtons>
           <IonTitle>Profile</IonTitle>
-          {hasProfileData && !isEditing && (
-            <IonButtons slot="end">
-              <IonButton onClick={() => setIsEditing(true)}>
-                <IonIcon icon={createOutline} />
-              </IonButton>
-            </IonButtons>
-          )}
         </IonToolbar>
       </IonHeader>
 
@@ -500,6 +493,20 @@ const ProfilePage: React.FC = () => {
                         </IonLabel>
                       </IonItem>
                     )}
+
+                    <IonButton
+                      expand="block"
+                      shape="round"
+                      onClick={() => setIsEditing(true)}
+                      style={{
+                        '--background': '#16a34a',
+                        '--background-activated': '#15803d',
+                        marginTop: '1rem',
+                      }}
+                    >
+                      <IonIcon icon={createOutline} slot="start" />
+                      Edit Profile
+                    </IonButton>
                   </div>
                 )}
               </div>
