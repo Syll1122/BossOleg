@@ -325,6 +325,47 @@ const ResidentTruckView: React.FC = () => {
                   };
                 }
               });
+            } else if (!marker && mapRef.current && status.isCollecting) {
+              // Truck is collecting but marker doesn't exist - add it
+              const baseLat = 14.683726;
+              const baseLng = 121.076224;
+              const collectors = await databaseService.getAccountsByRole('collector');
+              const offset = collectors.findIndex(c => c.truckNo === collector.truckNo) * 0.002;
+              const truckLat = baseLat + offset;
+              const truckLng = baseLng + offset;
+              
+              if (isValidCoordinate(truckLat, truckLng)) {
+                const isFull = status.isFull || false;
+                const icon = createTruckIcon(isFull, collector.truckNo);
+                const newMarker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current);
+                
+                const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
+                newMarker.bindPopup(popupContent, {
+                  className: 'custom-truck-popup',
+                  closeButton: false,
+                });
+                
+                newMarker.on('popupopen', () => {
+                  const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
+                  if (reportBtn) {
+                    reportBtn.onclick = () => {
+                      history.push({
+                        pathname: '/resident/report',
+                        state: { truckNo: collector.truckNo }
+                      });
+                    };
+                  }
+                  
+                  const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
+                  if (closeBtn) {
+                    closeBtn.onclick = () => {
+                      newMarker.closePopup();
+                    };
+                  }
+                });
+                
+                truckMarkersRef.current.set(collector.truckNo, newMarker);
+              }
             }
           }
         }
@@ -335,7 +376,7 @@ const ResidentTruckView: React.FC = () => {
 
     // Update statuses immediately and then periodically
     updateTruckStatuses();
-    const statusInterval = setInterval(updateTruckStatuses, 10000); // Check every 10 seconds
+    const statusInterval = setInterval(updateTruckStatuses, 3000); // Check every 3 seconds for faster updates
 
     return () => {
       clearInterval(statusInterval);
