@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText, IonAlert } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { databaseService } from '../services/database';
+import { sendPasswordEmail } from '../services/emailService';
 
 const LoginPage: React.FC = () => {
   const history = useHistory();
@@ -12,6 +13,9 @@ const LoginPage: React.FC = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showForgotPassword, setShowForgotPassword] = useState(false);
+  const [forgotPasswordEmail, setForgotPasswordEmail] = useState('');
+  const [isSendingPassword, setIsSendingPassword] = useState(false);
 
   // Initialize database on mount
   useEffect(() => {
@@ -62,6 +66,69 @@ const LoginPage: React.FC = () => {
       setAlertMessage('An error occurred during login. Please try again.');
       setShowAlert(true);
       setIsLoading(false);
+    }
+  };
+
+  const handleForgotPassword = async () => {
+    if (!forgotPasswordEmail.trim()) {
+      setAlertMessage('Please enter your email address');
+      setShowAlert(true);
+      return;
+    }
+
+    // Email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(forgotPasswordEmail)) {
+      setAlertMessage('Please enter a valid email address');
+      setShowAlert(true);
+      return;
+    }
+
+    setIsSendingPassword(true);
+
+    try {
+      await databaseService.init();
+      
+      // Check if account exists with this email
+      const account = await databaseService.getAccountByEmail(forgotPasswordEmail.toLowerCase().trim());
+      
+      if (!account) {
+        setAlertMessage('No account found with this email address');
+        setShowAlert(true);
+        setIsSendingPassword(false);
+        return;
+      }
+
+      // Send password to email
+      try {
+        const emailSent = await sendPasswordEmail(account.email, account.name, account.password);
+        
+        if (emailSent) {
+          setAlertMessage(`Your password has been sent to ${account.email}. Please check your inbox.`);
+          setShowAlert(true);
+          setShowForgotPassword(false);
+          setForgotPasswordEmail('');
+        } else {
+          // Fallback for development
+          setAlertMessage(`Password sent to ${account.email}. Your password is: ${account.password}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+          setShowAlert(true);
+          setShowForgotPassword(false);
+          setForgotPasswordEmail('');
+        }
+      } catch (error) {
+        console.error('Error sending password email:', error);
+        // Fallback for development
+        setAlertMessage(`Password sent to ${account.email}. Your password is: ${account.password}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+        setShowAlert(true);
+        setShowForgotPassword(false);
+        setForgotPasswordEmail('');
+      }
+    } catch (error: any) {
+      console.error('Forgot password error:', error);
+      setAlertMessage('An error occurred. Please try again.');
+      setShowAlert(true);
+    } finally {
+      setIsSendingPassword(false);
     }
   };
 
@@ -138,6 +205,7 @@ const LoginPage: React.FC = () => {
                 >
                   <button
                     type="button"
+                    onClick={() => setShowForgotPassword(true)}
                     style={{
                       border: 'none',
                       background: 'transparent',
@@ -149,6 +217,69 @@ const LoginPage: React.FC = () => {
                     Forgot password?
                   </button>
                 </div>
+
+                {showForgotPassword && (
+                  <div
+                    style={{
+                      padding: '1rem',
+                      marginBottom: '0.9rem',
+                      borderRadius: 12,
+                      background: '#f3f4fb',
+                      border: '1px solid #e5e7eb',
+                    }}
+                  >
+                    <IonText style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', display: 'block' }}>
+                      Reset Password
+                    </IonText>
+                    <IonText style={{ fontSize: '0.8rem', color: '#6b7280', marginBottom: '0.75rem', display: 'block' }}>
+                      Enter your email address and we'll send you your password.
+                    </IonText>
+                    <IonItem
+                      lines="none"
+                      style={{ marginBottom: '0.75rem', borderRadius: 12, '--background': '#ffffff' } as any}
+                    >
+                      <IonLabel position="stacked">Email Address</IonLabel>
+                      <IonInput
+                        type="email"
+                        value={forgotPasswordEmail}
+                        onIonInput={(e) => setForgotPasswordEmail(e.detail.value!)}
+                        placeholder="your@email.com"
+                      />
+                    </IonItem>
+                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                      <IonButton
+                        type="button"
+                        expand="block"
+                        shape="round"
+                        disabled={isSendingPassword}
+                        onClick={handleForgotPassword}
+                        style={{
+                          '--background': '#16a34a',
+                          '--background-activated': '#15803d',
+                          flex: 1,
+                        }}
+                      >
+                        {isSendingPassword ? 'Sending...' : 'Send Password'}
+                      </IonButton>
+                      <IonButton
+                        type="button"
+                        expand="block"
+                        shape="round"
+                        fill="outline"
+                        onClick={() => {
+                          setShowForgotPassword(false);
+                          setForgotPasswordEmail('');
+                        }}
+                        style={{
+                          '--border-color': '#6b7280',
+                          '--color': '#6b7280',
+                        }}
+                      >
+                        Cancel
+                      </IonButton>
+                    </div>
+                  </div>
+                )}
 
                 <IonButton
                   type="submit"

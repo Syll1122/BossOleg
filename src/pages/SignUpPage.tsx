@@ -1,9 +1,10 @@
 // src/pages/SignUpPage.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { IonPage, IonContent, IonInput, IonItem, IonLabel, IonButton, IonText, IonSelect, IonSelectOption, IonAlert } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { databaseService } from '../services/database';
+import { sendOTPEmail } from '../services/emailService';
 import { UserRole } from '../models/types';
 
 const SignUpPage: React.FC = () => {
@@ -21,14 +22,48 @@ const SignUpPage: React.FC = () => {
   const [otpCode, setOtpCode] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
+  const [truckNo, setTruckNo] = useState('');
+  const [availableTrucks, setAvailableTrucks] = useState<string[]>([]);
+  const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
+
+  // Available trucks in the system
+  const ALL_TRUCKS = ['BCG 11*4', 'BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
+
+  // Load available trucks when role changes to collector
+  useEffect(() => {
+    const loadAvailableTrucks = async () => {
+      if (role === 'collector') {
+        setIsLoadingTrucks(true);
+        try {
+          await databaseService.init();
+          const collectors = await databaseService.getAccountsByRole('collector');
+          const assignedTrucks = collectors
+            .map((c) => c.truckNo)
+            .filter((truck): truck is string => !!truck);
+          const available = ALL_TRUCKS.filter((truck) => !assignedTrucks.includes(truck));
+          setAvailableTrucks(available);
+        } catch (error) {
+          console.error('Error loading available trucks:', error);
+          setAvailableTrucks(ALL_TRUCKS); // Fallback to all trucks
+        } finally {
+          setIsLoadingTrucks(false);
+        }
+      } else {
+        setAvailableTrucks([]);
+        setTruckNo('');
+      }
+    };
+
+    loadAvailableTrucks();
+  }, [role]);
 
   // Generate OTP code
   const generateOTP = (): string => {
     return Math.floor(100000 + Math.random() * 900000).toString();
   };
 
-  // Send OTP (mock implementation - in production, send via email service)
-  const sendOTP = () => {
+  // Send OTP via email using EmailJS or similar service
+  const sendOTP = async () => {
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
@@ -39,13 +74,7 @@ const SignUpPage: React.FC = () => {
 
     const otp = generateOTP();
     setGeneratedOtp(otp);
-    setOtpSent(true);
     setOtpInput('');
-    
-    // In production, send OTP via email service
-    // For now, show it in alert (for testing purposes)
-    setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp} (This is for testing only)`);
-    setShowAlert(true);
     
     // Store OTP with expiration (5 minutes)
     const otpData = {
@@ -54,6 +83,28 @@ const SignUpPage: React.FC = () => {
       expiresAt: Date.now() + 5 * 60 * 1000, // 5 minutes
     };
     localStorage.setItem('signup_otp', JSON.stringify(otpData));
+
+    try {
+      const emailSent = await sendOTPEmail(email, otp);
+      
+      if (emailSent) {
+        setOtpSent(true);
+        setAlertMessage(`OTP has been sent to ${email}. Please check your inbox.`);
+        setShowAlert(true);
+      } else {
+        // Fallback: Show OTP in alert (for development/testing)
+        // In production, configure EmailJS in src/services/emailService.ts
+        setOtpSent(true);
+        setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+        setShowAlert(true);
+      }
+    } catch (error) {
+      console.error('Error sending OTP:', error);
+      // Fallback for development
+      setOtpSent(true);
+      setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+      setShowAlert(true);
+    }
   };
 
   // Validate name (only letters and spaces)
@@ -76,6 +127,14 @@ const SignUpPage: React.FC = () => {
     // Validation
     if (!email || !username || !password || !confirmPassword || !role || !name.trim()) {
       setAlertMessage('Please fill in all fields');
+      setShowAlert(true);
+      setIsLoading(false);
+      return;
+    }
+
+    // Truck number validation for collectors
+    if (role === 'collector' && !truckNo) {
+      setAlertMessage('Please select a truck number');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -153,6 +212,17 @@ const SignUpPage: React.FC = () => {
     }
 
     try {
+      // Validate truck number is not already taken (for collectors)
+      if (role === 'collector' && truckNo) {
+        const existingAccount = await databaseService.getAccountByTruckNo(truckNo);
+        if (existingAccount) {
+          setAlertMessage('This truck number is already assigned to another collector');
+          setShowAlert(true);
+          setIsLoading(false);
+          return;
+        }
+      }
+
       // Create account in local database
       await databaseService.createAccount({
         email: email.toLowerCase().trim(),
@@ -160,6 +230,7 @@ const SignUpPage: React.FC = () => {
         password, // In production, hash this password
         name: name.trim() || username.trim(),
         role,
+        truckNo: role === 'collector' ? truckNo : undefined,
       });
 
       // Clear OTP data
@@ -370,7 +441,7 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '1.1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                 >
                   <IonLabel position="stacked">Select Account Type</IonLabel>
                   <IonSelect
@@ -378,13 +449,47 @@ const SignUpPage: React.FC = () => {
                     placeholder="Choose role"
                     required
                     value={role}
-                    onIonChange={(e) => setRole(e.detail.value)}
+                    onIonChange={(e) => {
+                      setRole(e.detail.value);
+                      setTruckNo(''); // Reset truck selection when role changes
+                    }}
                     style={{ paddingLeft: 0 }}
                   >
                     <IonSelectOption value="resident">Resident</IonSelectOption>
                     <IonSelectOption value="collector">Garbage Collector</IonSelectOption>
                   </IonSelect>
                 </IonItem>
+
+                {role === 'collector' && (
+                  <IonItem
+                    lines="none"
+                    style={{ marginBottom: '1.1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  >
+                    <IonLabel position="stacked">Select Truck Number</IonLabel>
+                    {isLoadingTrucks ? (
+                      <IonText style={{ fontSize: '0.9rem', color: '#6b7280' }}>Loading available trucks...</IonText>
+                    ) : availableTrucks.length > 0 ? (
+                      <IonSelect
+                        interface="popover"
+                        placeholder="Choose truck number"
+                        required
+                        value={truckNo}
+                        onIonChange={(e) => setTruckNo(e.detail.value)}
+                        style={{ paddingLeft: 0 }}
+                      >
+                        {availableTrucks.map((truck) => (
+                          <IonSelectOption key={truck} value={truck}>
+                            {truck}
+                          </IonSelectOption>
+                        ))}
+                      </IonSelect>
+                    ) : (
+                      <IonText style={{ fontSize: '0.9rem', color: '#ef4444' }}>
+                        No trucks available. All trucks are assigned.
+                      </IonText>
+                    )}
+                  </IonItem>
+                )}
 
                 <IonButton
                   type="submit"

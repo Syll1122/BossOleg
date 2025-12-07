@@ -17,8 +17,14 @@ import { useHistory } from 'react-router-dom';
 import { logout, getCurrentUserId } from '../../utils/auth';
 import { databaseService } from '../../services/database';
 
+interface ScheduleLocation {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
 interface CollectorHomePageProps {
-  onStartCollecting: () => void;
+  onStartCollecting: (selectedLocation?: ScheduleLocation) => void;
 }
 
 const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting }) => {
@@ -28,7 +34,15 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
   const [truckIsFull, setTruckIsFull] = useState(false);
   const [collectorName, setCollectorName] = useState('Manong Collector');
+  const [truckNo, setTruckNo] = useState('BCG 11*4');
   const history = useHistory();
+
+  // Schedule locations with coordinates
+  const scheduleLocations: ScheduleLocation[] = [
+    { name: 'Don Pedro, HOLY SPIRIT', lat: 14.682042, lng: 121.076975 },
+    { name: 'Don Primitivo, HOLY SPIRIT', lat: 14.680823, lng: 121.076206 },
+    { name: 'Don Elpidio, HOLY SPIRIT', lat: 14.679855, lng: 121.077793 },
+  ];
 
   // Load collector name and truck status
   useEffect(() => {
@@ -36,19 +50,24 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       try {
         await databaseService.init();
         
-        // Get collector name
+        // Get collector name and truck number
         const userId = getCurrentUserId();
         if (userId) {
           const account = await databaseService.getAccountById(userId);
-          if (account?.name) {
-            setCollectorName(account.name);
+          if (account) {
+            if (account.name) {
+              setCollectorName(account.name);
+            }
+            if (account.truckNo) {
+              setTruckNo(account.truckNo);
+              
+              // Check truck status using the account's truck number
+              const status = await databaseService.getTruckStatus(account.truckNo);
+              if (status) {
+                setTruckIsFull(status.isFull);
+              }
+            }
           }
-        }
-        
-        // Check truck status
-        const status = await databaseService.getTruckStatus('BCG 11*4');
-        if (status) {
-          setTruckIsFull(status.isFull);
         }
       } catch (error) {
         console.error('Error loading collector data:', error);
@@ -73,7 +92,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       try {
         const userId = getCurrentUserId();
         if (userId) {
-          await databaseService.updateTruckStatus('BCG 11*4', false, userId);
+          await databaseService.updateTruckStatus(truckNo, false, userId);
           setTruckIsFull(false);
         }
       } catch (error) {
@@ -195,7 +214,15 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
             >
               <button
                 type="button"
-                onClick={() => setShowLocationPrompt(true)}
+                onClick={() => {
+                  if (truckIsFull) {
+                    // Continue collecting - go directly to route page
+                    onStartCollecting();
+                  } else {
+                    // Start collecting - show location prompt first
+                    setShowLocationPrompt(true);
+                  }
+                }}
                 style={{
                   display: 'inline-flex',
                   alignItems: 'center',
@@ -231,7 +258,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
 
               <div style={{ textAlign: 'right' }}>
                 <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Truck No:</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>BCG 11*4</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{truckNo}</div>
               </div>
             </div>
 
@@ -240,28 +267,40 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
             </div>
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {['Don Pedro, HOLY SPIRIT', 'Don Primitivo, HOLY SPIRIT', 'Don Elpidio, HOLY SPIRIT'].map(
-                (street) => (
-                  <button
-                    key={street}
-                    type="button"
-                    style={{
-                      width: '100%',
-                      borderRadius: 999,
-                      border: 'none',
-                      padding: '0.9rem 1.2rem',
-                      backgroundColor: '#16a34a',
-                      color: '#ffffff',
-                      fontWeight: 600,
-                      fontSize: '0.8rem',
-                      textAlign: 'center',
-                      boxShadow: '0 10px 22px rgba(22,163,74,0.45)',
-                    }}
-                  >
-                    {street}
-                  </button>
-                ),
-              )}
+              {scheduleLocations.map((location) => (
+                <button
+                  key={location.name}
+                  type="button"
+                  onClick={() => {
+                    // Navigate to route page with selected location
+                    onStartCollecting(location);
+                  }}
+                  style={{
+                    width: '100%',
+                    borderRadius: 999,
+                    border: 'none',
+                    padding: '0.9rem 1.2rem',
+                    backgroundColor: '#16a34a',
+                    color: '#ffffff',
+                    fontWeight: 600,
+                    fontSize: '0.8rem',
+                    textAlign: 'center',
+                    boxShadow: '0 10px 22px rgba(22,163,74,0.45)',
+                    cursor: 'pointer',
+                    transition: 'transform 0.2s, box-shadow 0.2s',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(22,163,74,0.55)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 10px 22px rgba(22,163,74,0.45)';
+                  }}
+                >
+                  {location.name}
+                </button>
+              ))}
             </div>
           </div>
         </div>

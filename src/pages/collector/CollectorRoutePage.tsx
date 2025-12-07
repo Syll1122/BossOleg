@@ -1,10 +1,10 @@
 // src/pages/collector/CollectorRoutePage.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon } from '@ionic/react';
+import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon, IonSearchbar } from '@ionic/react';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
-import { busOutline } from 'ionicons/icons';
+import { busOutline, searchOutline } from 'ionicons/icons';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 
@@ -15,8 +15,15 @@ interface TruckLocation {
   timestamp: string;
 }
 
+interface ScheduleLocation {
+  name: string;
+  lat: number;
+  lng: number;
+}
+
 interface CollectorRoutePageProps {
   onBack?: () => void;
+  selectedLocation?: ScheduleLocation;
 }
 
 // Validate GPS coordinates
@@ -33,31 +40,64 @@ const isValidCoordinate = (lat: number, lng: number): boolean => {
   );
 };
 
-const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
+const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selectedLocation }) => {
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkerRef = useRef<L.Marker | null>(null);
+  const searchMarkerRef = useRef<L.Marker | null>(null);
   const [truckFullAlert, setTruckFullAlert] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [truckNo, setTruckNo] = useState('BCG 11*4');
   const watchIdRef = useRef<number | null>(null);
 
-  const whiteTruckIcon = L.divIcon({
-    html: '🚛',
-    className: 'watch-truck-icon watch-truck-icon--white',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  });
+  // Load truck number from account
+  useEffect(() => {
+    const loadTruckNo = async () => {
+      try {
+        await databaseService.init();
+        const userId = getCurrentUserId();
+        if (userId) {
+          const account = await databaseService.getAccountById(userId);
+          if (account?.truckNo) {
+            setTruckNo(account.truckNo);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading truck number:', error);
+      }
+    };
+    loadTruckNo();
+  }, []);
 
-  const redTruckIcon = L.divIcon({
-    html: '🚛',
-    className: 'watch-truck-icon watch-truck-icon--red',
-    iconSize: [32, 32],
-    iconAnchor: [16, 16],
-  });
+  // Create truck icons with dynamic truck number
+  const createTruckIcon = (isRed: boolean, truckNumber: string) => {
+    return L.divIcon({
+      html: `
+        <div style="display: flex; flex-direction: column; align-items: center;">
+          <div style="font-size: 28px;">🚛</div>
+          <div style="background: ${isRed ? '#ef4444' : 'white'}; color: ${isRed ? 'white' : '#1f2937'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); white-space: nowrap;">
+            ${truckNumber}
+          </div>
+        </div>
+      `,
+      className: isRed ? 'watch-truck-icon watch-truck-icon--red' : 'watch-truck-icon watch-truck-icon--white',
+      iconSize: [60, 50],
+      iconAnchor: [30, 45],
+    });
+  };
 
   const stopIcon = L.divIcon({
     html: '🚩',
     className: 'watch-stop-icon',
     iconSize: [28, 28],
     iconAnchor: [14, 28],
+  });
+
+  const searchFlagIcon = L.divIcon({
+    html: '📍',
+    className: 'watch-stop-icon',
+    iconSize: [32, 32],
+    iconAnchor: [16, 32],
   });
 
   const handleMapReady = (map: L.Map) => {
@@ -83,6 +123,16 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
         marker.bindPopup(`<div style="text-align: center; font-weight: 600;">${stopLabels[index]}</div>`);
       });
 
+      // Add flag for selected location from schedule if provided
+      if (selectedLocation) {
+        const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
+        const marker = L.marker(selectedPos, { icon: searchFlagIcon }).addTo(mapRef.current!);
+        marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${selectedLocation.name}</div>`);
+        marker.openPopup();
+        // Center map on selected location
+        mapRef.current.setView(selectedPos, 17);
+      }
+
       // Function to update truck position
       const updateTruckPosition = (lat: number, lng: number) => {
         if (!mapRef.current) return;
@@ -93,6 +143,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
         }
         
         const latlng: L.LatLngExpression = [lat, lng];
+        const currentTruckNo = truckNo || 'BCG 11*4'; // Fallback if not loaded yet
         
         if (truckMarkerRef.current) {
           // Update existing marker position
@@ -102,7 +153,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
           truckMarkerRef.current.bindPopup(`
             <div style="text-align: center; padding: 0.5rem;">
               <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
               <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
               <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
                 Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
@@ -111,14 +162,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
           `);
         } else {
           // Create new marker if it doesn't exist
-          const marker = L.marker(latlng, { icon: whiteTruckIcon }).addTo(mapRef.current);
+          const icon = createTruckIcon(false, currentTruckNo);
+          const marker = L.marker(latlng, { icon }).addTo(mapRef.current);
           truckMarkerRef.current = marker;
           
           // Add click popup to truck marker
           marker.bindPopup(`
             <div style="text-align: center; padding: 0.5rem;">
               <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+              <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
               <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
               <div style="font-size: 0.8rem; color: #6b7280; margin-top: 0.5rem;">
                 Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
@@ -142,12 +194,14 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
               // Fallback to first stop
               if (!mapRef.current) return;
               mapRef.current.setView(donPedro, 16);
-              const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
+              const currentTruckNo = truckNo || 'BCG 11*4';
+              const icon = createTruckIcon(false, currentTruckNo);
+              const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
               truckMarkerRef.current = marker;
               marker.bindPopup(`
                 <div style="text-align: center; padding: 0.5rem;">
                   <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-                  <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+                  <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${truckNo}</div>
                   <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
                 </div>
               `);
@@ -157,15 +211,21 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
             
             const latlng: L.LatLngExpression = [lat, lng];
             
-            // Center map on user's actual location first
-            mapRef.current.setView(latlng, 16);
-            
             // Place truck at user's actual location
             updateTruckPosition(lat, lng);
             
-            // Fit bounds to show both truck location and all stops
-            const allPoints = [latlng, ...stops];
-            mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
+            // If no selected location, center on truck. Otherwise, keep selected location centered
+            if (!selectedLocation) {
+              mapRef.current.setView(latlng, 16);
+              // Fit bounds to show both truck location and all stops
+              const allPoints = [latlng, ...stops];
+              mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
+            } else {
+              // Fit bounds to show truck, selected location, and all stops
+              const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
+              const allPoints = [latlng, selectedPos, ...stops];
+              mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
+            }
 
             // Set up real-time location tracking (watchPosition)
             watchIdRef.current = navigator.geolocation.watchPosition(
@@ -192,12 +252,14 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
             console.error('GPS error:', error);
             if (!mapRef.current) return;
             mapRef.current.setView(donPedro, 16);
-            const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
+            const currentTruckNo = truckNo || 'BCG 11*4';
+            const icon = createTruckIcon(false, currentTruckNo);
+            const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
             truckMarkerRef.current = marker;
             marker.bindPopup(`
               <div style="text-align: center; padding: 0.5rem;">
                 <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-                <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+                <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${truckNo}</div>
                 <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
                 <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS unavailable</div>
               </div>
@@ -209,13 +271,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       } else {
         // Fallback if geolocation not available
         if (!mapRef.current) return;
+        const currentTruckNo = truckNo || 'BCG 11*4';
         mapRef.current.setView(donPedro, 16);
-        const marker = L.marker(donPedro, { icon: whiteTruckIcon }).addTo(mapRef.current);
+        const icon = createTruckIcon(false, currentTruckNo);
+        const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
         truckMarkerRef.current = marker;
         marker.bindPopup(`
           <div style="text-align: center; padding: 0.5rem;">
             <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 Truck Information</div>
-            <div style="font-size: 0.9rem;"><strong>Truck No:</strong> BCG 11*4</div>
+            <div style="font-size: 0.9rem;"><strong>Truck No:</strong> ${currentTruckNo}</div>
             <div style="font-size: 0.9rem;"><strong>Truck Size:</strong> Large</div>
             <div style="font-size: 0.8rem; color: #ef4444; margin-top: 0.5rem;">⚠️ GPS not available</div>
           </div>
@@ -225,10 +289,33 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
     }, 300);
   };
 
-  // Stop collecting - return to collector home page
-  const onStopCollecting = () => {
-    if (onBack) {
-      onBack();
+  // Stop collecting - return to collector home page and reset truck status
+  const onStopCollecting = async () => {
+    try {
+      // Reset truck status to not full (empty)
+      const userId = getCurrentUserId();
+      if (userId) {
+        await databaseService.updateTruckStatus(truckNo, false, userId);
+      }
+      
+      // Update marker icon to white if it was red
+      if (truckMarkerRef.current) {
+        const currentTruckNo = truckNo || 'BCG 11*4';
+        truckMarkerRef.current.setIcon(createTruckIcon(false, currentTruckNo));
+      }
+      
+      // Stop GPS tracking
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+    } catch (error) {
+      console.error('Error resetting truck status:', error);
+    } finally {
+      // Always go back to home page
+      if (onBack) {
+        onBack();
+      }
     }
   };
 
@@ -237,12 +324,13 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       // Update truck status in database
       const userId = getCurrentUserId();
       if (userId) {
-        await databaseService.updateTruckStatus('BCG 11*4', true, userId);
+        await databaseService.updateTruckStatus(truckNo, true, userId);
       }
       
       // Update marker icon to red
       if (truckMarkerRef.current) {
-        truckMarkerRef.current.setIcon(redTruckIcon);
+        const currentTruckNo = truckNo || 'BCG 11*4';
+        truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
       }
       
       if (onBack) {
@@ -265,12 +353,13 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       // Update truck status in database
       const userId = getCurrentUserId();
       if (userId) {
-        await databaseService.updateTruckStatus('BCG 11*4', false, userId);
+        await databaseService.updateTruckStatus(truckNo, false, userId);
       }
       
       // Update marker icon to white
       if (truckMarkerRef.current) {
-        truckMarkerRef.current.setIcon(whiteTruckIcon);
+        const currentTruckNo = truckNo || 'BCG 11*4';
+        truckMarkerRef.current.setIcon(createTruckIcon(false, currentTruckNo));
       }
     } catch (error) {
       console.error('Error updating truck status:', error);
@@ -281,12 +370,120 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
     }
   };
 
+  // Handle search functionality
+  const handleSearch = async () => {
+    if (!mapRef.current || !searchQuery.trim()) return;
+
+    try {
+      // Try to parse as coordinates first (lat, lng)
+      const coordMatch = searchQuery.match(/^(-?\d+\.?\d*),\s*(-?\d+\.?\d*)$/);
+      if (coordMatch) {
+        const lat = parseFloat(coordMatch[1]);
+        const lng = parseFloat(coordMatch[2]);
+        if (isValidCoordinate(lat, lng)) {
+          const pos: L.LatLngExpression = [lat, lng];
+          if (searchMarkerRef.current) {
+            searchMarkerRef.current.remove();
+          }
+          const marker = L.marker(pos, { icon: searchFlagIcon }).addTo(mapRef.current);
+          searchMarkerRef.current = marker;
+          marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 Searched Location<br/>${lat.toFixed(6)}, ${lng.toFixed(6)}</div>`);
+          marker.openPopup();
+          mapRef.current.setView(pos, 17);
+          setShowSearch(false);
+          setSearchQuery('');
+          return;
+        }
+      }
+
+      // Use Nominatim (OpenStreetMap geocoding) for address search
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(searchQuery)}&limit=1`,
+        {
+          headers: {
+            'User-Agent': 'BossOleg-CollectorApp/1.0',
+          },
+        }
+      );
+      const data = await response.json();
+      
+      if (data && data.length > 0) {
+        const result = data[0];
+        const lat = parseFloat(result.lat);
+        const lng = parseFloat(result.lon);
+        
+        if (isValidCoordinate(lat, lng)) {
+          const pos: L.LatLngExpression = [lat, lng];
+          if (searchMarkerRef.current) {
+            searchMarkerRef.current.remove();
+          }
+          const marker = L.marker(pos, { icon: searchFlagIcon }).addTo(mapRef.current);
+          searchMarkerRef.current = marker;
+          marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${result.display_name}</div>`);
+          marker.openPopup();
+          mapRef.current.setView(pos, 17);
+          setShowSearch(false);
+          setSearchQuery('');
+        } else {
+          alert('Invalid location coordinates found');
+        }
+      } else {
+        alert('Location not found. Try entering coordinates (lat, lng) or a specific address.');
+      }
+    } catch (error) {
+      console.error('Search error:', error);
+      alert('Error searching for location. Please try again.');
+    }
+  };
+
+  // Add selected location marker when selectedLocation changes
+  useEffect(() => {
+    if (!mapRef.current || !selectedLocation) return;
+
+    const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
+    
+    // Check if marker already exists (from handleMapReady)
+    const existingMarkers = mapRef.current.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        const markerPos = layer.getLatLng();
+        if (Math.abs(markerPos.lat - selectedLocation.lat) < 0.0001 && 
+            Math.abs(markerPos.lng - selectedLocation.lng) < 0.0001) {
+          return layer;
+        }
+      }
+      return null;
+    });
+
+    // Only add if it doesn't exist
+    let markerExists = false;
+    mapRef.current.eachLayer((layer) => {
+      if (layer instanceof L.Marker) {
+        const markerPos = layer.getLatLng();
+        if (Math.abs(markerPos.lat - selectedLocation.lat) < 0.0001 && 
+            Math.abs(markerPos.lng - selectedLocation.lng) < 0.0001) {
+          markerExists = true;
+        }
+      }
+    });
+
+    if (!markerExists) {
+      const marker = L.marker(selectedPos, { icon: searchFlagIcon }).addTo(mapRef.current);
+      marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${selectedLocation.name}</div>`);
+      marker.openPopup();
+      mapRef.current.setView(selectedPos, 17);
+    }
+  }, [selectedLocation]);
+
   useEffect(() => {
     // Cleanup marker and stop GPS tracking if the component unmounts
     return () => {
       if (truckMarkerRef.current) {
         truckMarkerRef.current.remove();
         truckMarkerRef.current = null;
+      }
+      if (searchMarkerRef.current) {
+        searchMarkerRef.current.remove();
+        searchMarkerRef.current = null;
       }
       if (watchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchIdRef.current);
@@ -331,9 +528,78 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack }) => {
       </IonHeader>
 
       <IonContent fullscreen>
+        {/* Search Bar */}
+        {showSearch && (
+          <div
+            style={{
+              position: 'absolute',
+              top: '60px',
+              left: '1rem',
+              right: '1rem',
+              zIndex: 1000,
+              backgroundColor: 'white',
+              borderRadius: 12,
+              padding: '0.5rem',
+              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+            }}
+          >
+            <IonSearchbar
+              value={searchQuery}
+              onIonInput={(e) => setSearchQuery(e.detail.value!)}
+              placeholder="Search location or enter coordinates (lat, lng)"
+              showCancelButton="always"
+              cancelButtonText="Close"
+              onIonCancel={() => {
+                setShowSearch(false);
+                setSearchQuery('');
+              }}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  handleSearch();
+                }
+              }}
+            />
+            <IonButton
+              expand="block"
+              onClick={handleSearch}
+              style={{
+                marginTop: '0.5rem',
+                '--background': '#16a34a',
+                '--color': 'white',
+              }}
+            >
+              <IonIcon icon={searchOutline} slot="start" />
+              Search
+            </IonButton>
+          </div>
+        )}
+
         <div style={{ padding: '0.25rem 1rem 5.5rem' }}>
-          <div className="watch-card" style={{ overflow: 'hidden', height: '63vh', borderRadius: 24 }}>
+          <div className="watch-card" style={{ overflow: 'hidden', height: '63vh', borderRadius: 24, position: 'relative' }}>
             <AnyMapView id="collector-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
+            
+            {/* Search Button */}
+            <button
+              type="button"
+              onClick={() => setShowSearch(!showSearch)}
+              style={{
+                position: 'absolute',
+                top: '1rem',
+                right: '1rem',
+                zIndex: 1000,
+                backgroundColor: 'white',
+                border: 'none',
+                borderRadius: 12,
+                padding: '0.75rem',
+                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+              }}
+            >
+              <IonIcon icon={searchOutline} style={{ fontSize: '1.2rem', color: '#16a34a' }} />
+            </button>
           </div>
         </div>
 

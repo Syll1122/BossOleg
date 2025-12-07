@@ -4,7 +4,7 @@
 import { Account, UserRole, Report, TruckStatus } from '../models/types';
 
 const DB_NAME = 'WatchAppDB';
-const DB_VERSION = 3; // Incremented to add truck status store
+const DB_VERSION = 4; // Incremented to add truckNo index
 const STORE_NAME = 'accounts';
 const REPORTS_STORE_NAME = 'reports';
 const TRUCK_STATUS_STORE_NAME = 'truckStatus';
@@ -48,6 +48,7 @@ class DatabaseService {
 
       request.onupgradeneeded = (event) => {
         const db = (event.target as IDBOpenDBRequest).result;
+        const transaction = (event.target as IDBOpenDBRequest).transaction;
 
         // Create accounts store if it doesn't exist
         if (!db.objectStoreNames.contains(STORE_NAME)) {
@@ -55,6 +56,17 @@ class DatabaseService {
           objectStore.createIndex('email', 'email', { unique: true });
           objectStore.createIndex('username', 'username', { unique: true });
           objectStore.createIndex('role', 'role', { unique: false });
+          objectStore.createIndex('truckNo', 'truckNo', { unique: true });
+        } else if (transaction) {
+          // Add truckNo index if it doesn't exist (for existing databases)
+          const objectStore = transaction.objectStore(STORE_NAME);
+          if (objectStore && !objectStore.indexNames.contains('truckNo')) {
+            try {
+              objectStore.createIndex('truckNo', 'truckNo', { unique: true });
+            } catch (error) {
+              console.warn('Could not create truckNo index:', error);
+            }
+          }
         }
 
         // Create reports store if it doesn't exist
@@ -539,6 +551,67 @@ class DatabaseService {
       const request = store.getAll();
       request.onsuccess = () => resolve(request.result || []);
       request.onerror = () => reject(request.error);
+    });
+  }
+
+  /**
+   * Get accounts by role
+   */
+  async getAccountsByRole(role: UserRole): Promise<Account[]> {
+    await this.ensureInit();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      const index = store.index('role');
+      const request = index.getAll(role);
+
+      request.onsuccess = () => {
+        resolve(request.result || []);
+      };
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+    });
+  }
+
+  /**
+   * Get account by truck number
+   */
+  async getAccountByTruckNo(truckNo: string): Promise<Account | null> {
+    await this.ensureInit();
+
+    return new Promise((resolve, reject) => {
+      if (!this.db) {
+        reject(new Error('Database not initialized'));
+        return;
+      }
+
+      const transaction = this.db.transaction([STORE_NAME], 'readonly');
+      const store = transaction.objectStore(STORE_NAME);
+      
+      // Try to use truckNo index if it exists
+      if (store.indexNames.contains('truckNo')) {
+        const index = store.index('truckNo');
+        const request = index.get(truckNo);
+        request.onsuccess = () => resolve(request.result || null);
+        request.onerror = () => reject(request.error);
+      } else {
+        // Fallback: get all accounts and filter
+        const request = store.getAll();
+        request.onsuccess = () => {
+          const accounts = request.result || [];
+          const account = accounts.find((acc: Account) => acc.truckNo === truckNo);
+          resolve(account || null);
+        };
+        request.onerror = () => reject(request.error);
+      }
     });
   }
 }

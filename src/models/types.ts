@@ -15,6 +15,7 @@ export interface Account {
   password: string; // In production, this should be hashed
   name: string;
   role: UserRole;
+  truckNo?: string; // Truck number for collectors
   address?: string; // Profile field
   phoneNumber?: string; // Profile field
   createdAt: string;
