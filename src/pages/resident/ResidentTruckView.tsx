@@ -13,6 +13,11 @@ const ResidentTruckView: React.FC = () => {
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const updateIntervalRef = useRef<number | null>(null);
+  const previousTruckStatusesRef = useRef<Map<string, { isCollecting: boolean; isFull: boolean }>>(new Map());
+  
+  // Toast state for notifications
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   // Create truck icons with dynamic truck number (matching collector side design)
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
