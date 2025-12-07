@@ -518,10 +518,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               button
               onClick={() => {
                 setMenuEvent(null);
-                history.push('/');
+                history.push('/collector/profile');
               }}
             >
-              Go to Home page
+              Profile
             </IonItem>
             <IonItem
               button

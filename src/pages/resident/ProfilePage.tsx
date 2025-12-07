@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonAlert, IonSpinner, IonText } from '@ionic/react';
-import { arrowBackOutline, personOutline, homeOutline, callOutline, createOutline, locationOutline } from 'ionicons/icons';
+import { arrowBackOutline, personOutline, homeOutline, callOutline, createOutline, locationOutline, busOutline } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import useCurrentUser from '../../state/useCurrentUser';
 import { databaseService } from '../../services/database';
@@ -19,6 +19,7 @@ const ProfilePage: React.FC = () => {
   const [barangays, setBarangays] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingBarangays, setIsLoadingBarangays] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
+  const [truckNo, setTruckNo] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
@@ -76,6 +77,7 @@ const ProfilePage: React.FC = () => {
           setAddress(account.address || '');
           setBarangay(account.barangay || '');
           setPhoneNumber(account.phoneNumber || '');
+          setTruckNo(account.truckNo || '');
           
           // Check if profile is complete
           const hasData = account.address && account.barangay && account.phoneNumber;
@@ -477,7 +479,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: user?.role === 'collector' ? '1rem' : '1.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                     >
                       <IonIcon slot="start" icon={callOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -485,6 +487,19 @@ const ProfilePage: React.FC = () => {
                         <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#6b7280' }}>{phoneNumber || 'Not set'}</p>
                       </IonLabel>
                     </IonItem>
+
+                    {user?.role === 'collector' && (
+                      <IonItem
+                        lines="none"
+                        style={{ marginBottom: '1.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      >
+                        <IonIcon slot="start" icon={busOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
+                        <IonLabel>
+                          <h3 style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600 }}>Truck Number</h3>
+                          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem', color: '#6b7280' }}>{truckNo || 'Not assigned'}</p>
+                        </IonLabel>
+                      </IonItem>
+                    )}
                   </div>
                 )}
               </div>

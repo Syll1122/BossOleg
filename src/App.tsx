@@ -40,6 +40,7 @@ const App: React.FC = () => {
           <Route path="/login" component={LoginPage} exact />
           <Route path="/signup" component={SignUpPage} exact />
           <Route path="/collector" component={CollectorStack} />
+          <Route path="/collector/profile" component={ProfilePage} exact />
           <Route path="/admin" component={AdminTabs} />
           <Route path="/resident/truck" component={ResidentTruckView} exact />
           <Route path="/resident/profile" component={ProfilePage} exact />

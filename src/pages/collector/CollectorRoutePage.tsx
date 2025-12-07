@@ -91,12 +91,17 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     setTruckCollecting();
     
     // Cleanup: Stop collecting when component unmounts or navigates away
+    // BUT preserve isFull status - don't reset it to false
     return () => {
       const cleanup = async () => {
         try {
           const userId = getCurrentUserId();
           if (userId && truckNo) {
-            await databaseService.updateTruckStatus(truckNo, false, userId, false);
+            // Get current status to preserve isFull
+            const currentStatus = await databaseService.getTruckStatus(truckNo);
+            const preserveIsFull = currentStatus?.isFull || false;
+            // Only set isCollecting = false, preserve isFull status
+            await databaseService.updateTruckStatus(truckNo, preserveIsFull, userId, false);
           }
           if (watchIdRef.current !== null && navigator.geolocation) {
             navigator.geolocation.clearWatch(watchIdRef.current);
