@@ -36,6 +36,7 @@ CREATE TABLE IF NOT EXISTS reports (
   issue TEXT NOT NULL,
   barangay TEXT NOT NULL,
   "truckNo" TEXT NOT NULL,
+  "collectorId" TEXT REFERENCES accounts(id) ON DELETE SET NULL, -- Direct link to collector
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'reviewed', 'resolved')),
   "createdAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW()
@@ -43,6 +44,8 @@ CREATE TABLE IF NOT EXISTS reports (
 
 -- Create indexes for faster lookups
 CREATE INDEX IF NOT EXISTS idx_reports_userid ON reports("userId");
+CREATE INDEX IF NOT EXISTS idx_reports_collectorid ON reports("collectorId");
+CREATE INDEX IF NOT EXISTS idx_reports_truckno ON reports("truckNo");
 CREATE INDEX IF NOT EXISTS idx_reports_status ON reports(status);
 CREATE INDEX IF NOT EXISTS idx_reports_createdat ON reports("createdAt");
 

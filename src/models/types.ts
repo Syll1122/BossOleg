@@ -24,13 +24,14 @@ export interface Account {
 
 export interface Report {
   id: string;
-  userId: string;
+  userId: string; // Resident who created the report
   userName: string;
   userEmail: string;
   reportType: 'select' | 'type';
   issue: string; // Selected option or custom text
   barangay: string;
-  truckNo: string;
+  truckNo: string; // Truck number (for backward compatibility)
+  collectorId?: string; // Direct link to collector account (optional for now)
   status: 'pending' | 'reviewed' | 'resolved';
   createdAt: string;
   updatedAt: string;
