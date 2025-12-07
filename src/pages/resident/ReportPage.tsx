@@ -1,7 +1,7 @@
 // src/pages/resident/ReportPage.tsx
 
 import React, { useState, useEffect } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio, IonAlert, IonSpinner, IonSelect, IonSelectOption } from '@ionic/react';
+import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonInput, IonItem, IonLabel, IonTextarea, IonRadioGroup, IonRadio, IonAlert, IonSpinner, IonSelect, IonSelectOption, IonText } from '@ionic/react';
 import { arrowBackOutline, documentTextOutline, listOutline } from 'ionicons/icons';
 import { useHistory, useLocation } from 'react-router-dom';
 import { databaseService } from '../../services/database';
@@ -23,6 +23,10 @@ const ReportPage: React.FC = () => {
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [customReport, setCustomReport] = useState('');
   const [barangay, setBarangay] = useState('');
+  const [barangaySearch, setBarangaySearch] = useState('');
+  const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
+  const [barangays, setBarangays] = useState<Array<{ id: string; name: string }>>([]);
+  const [isLoadingBarangays, setIsLoadingBarangays] = useState(false);
   const [truckNo, setTruckNo] = useState('');
   const [hasAddress, setHasAddress] = useState(false);
   const [truckFromMarker, setTruckFromMarker] = useState(false);
@@ -30,6 +34,32 @@ const ReportPage: React.FC = () => {
   const [showAlert, setShowAlert] = useState(false);
   const [alertMessage, setAlertMessage] = useState('');
   const [alertHeader, setAlertHeader] = useState('');
+
+  // Load barangays from database
+  useEffect(() => {
+    const loadBarangays = async () => {
+      setIsLoadingBarangays(true);
+      try {
+        await databaseService.init();
+        const barangayList = await databaseService.getAllBarangays();
+        setBarangays(barangayList);
+      } catch (error) {
+        console.error('Error loading barangays:', error);
+        setBarangays([]);
+      } finally {
+        setIsLoadingBarangays(false);
+      }
+    };
+
+    loadBarangays();
+  }, []);
+
+  // Filter barangays based on search input
+  const filteredBarangays = barangaySearch
+    ? barangays.filter(b =>
+        b.name.toLowerCase().includes(barangaySearch.toLowerCase())
+      )
+    : barangays;
 
   // Load profile address and truck number from navigation state
   useEffect(() => {
@@ -43,12 +73,12 @@ const ReportPage: React.FC = () => {
           setTruckFromMarker(true);
         }
         
-        // Load user's address from profile
+        // Load user's barangay from profile
         const userId = getCurrentUserId();
         if (userId) {
           const account = await databaseService.getAccountById(userId);
-          if (account?.address) {
-            setBarangay(account.address);
+          if (account?.barangay) {
+            setBarangay(account.barangay);
             setHasAddress(true);
           }
         }
@@ -92,7 +122,7 @@ const ReportPage: React.FC = () => {
 
     if (!barangay.trim()) {
       setAlertHeader('Validation Error');
-      setAlertMessage(hasAddress ? 'Please update your address in Profile to use it here, or enter a barangay.' : 'Please enter your barangay.');
+      setAlertMessage(hasAddress ? 'Please update your barangay in Profile to use it here, or enter a barangay.' : 'Please enter your barangay.');
       setShowAlert(true);
       return;
     }
@@ -269,28 +299,126 @@ const ReportPage: React.FC = () => {
                     )}
                   </div>
 
-                  <IonItem
-                    lines="none"
-                    style={{ marginBottom: '1rem', borderRadius: 14, '--background': hasAddress ? '#f3f4f6' : '#f9fafb' } as any}
-                  >
-                    <IonLabel position="stacked">Barangay</IonLabel>
-                    {hasAddress ? (
-                      <IonInput 
-                        required 
-                        value={barangay} 
-                        readonly
-                        style={{ '--color': '#6b7280', cursor: 'not-allowed' } as any}
-                        placeholder="Barangay from profile"
-                      />
-                    ) : (
-                      <IonInput 
-                        required 
-                        value={barangay} 
-                        onIonInput={(e) => setBarangay(e.detail.value!)} 
-                        placeholder="Enter barangay name" 
-                      />
+                  <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                    <IonItem
+                      lines="none"
+                      style={{ borderRadius: 14, '--background': hasAddress ? '#f3f4f6' : '#f9fafb' } as any}
+                    >
+                      <IonLabel position="stacked">Barangay</IonLabel>
+                      {hasAddress ? (
+                        <IonInput 
+                          required 
+                          value={barangay} 
+                          readonly
+                          style={{ '--color': '#6b7280', cursor: 'not-allowed' } as any}
+                          placeholder="Barangay from profile"
+                        />
+                      ) : (
+                        <IonInput 
+                          required 
+                          value={barangaySearch || barangay}
+                          onIonInput={(e) => {
+                            const value = e.detail.value!;
+                            setBarangaySearch(value);
+                            setShowBarangayDropdown(true);
+                            const exactMatch = barangays.find(b => b.name.toLowerCase() === value.toLowerCase());
+                            if (exactMatch) {
+                              setBarangay(exactMatch.name);
+                              setBarangaySearch('');
+                              setShowBarangayDropdown(false);
+                            } else {
+                              if (barangay && !value.startsWith(barangay)) {
+                                setBarangay('');
+                              }
+                            }
+                          }}
+                          onIonFocus={() => {
+                            if (!hasAddress) {
+                              setShowBarangayDropdown(true);
+                              if (barangay) {
+                                setBarangaySearch(barangay);
+                              }
+                            }
+                          }}
+                          onIonBlur={() => {
+                            setTimeout(() => {
+                              setShowBarangayDropdown(false);
+                              const matchesBarangay = barangays.some(b => b.name.toLowerCase() === barangaySearch.toLowerCase());
+                              if (barangay && !matchesBarangay) {
+                                setBarangaySearch('');
+                              }
+                            }, 200);
+                          }}
+                          placeholder="Search or select your barangay" 
+                        />
+                      )}
+                    </IonItem>
+                    {!hasAddress && showBarangayDropdown && (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          top: '100%',
+                          left: 0,
+                          right: 0,
+                          backgroundColor: '#ffffff',
+                          border: '1px solid #e5e7eb',
+                          borderRadius: '14px',
+                          marginTop: '4px',
+                          maxHeight: '200px',
+                          overflowY: 'auto',
+                          zIndex: 1000,
+                          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                        }}
+                      >
+                        {isLoadingBarangays ? (
+                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                            Loading barangays...
+                          </div>
+                        ) : filteredBarangays.length > 0 ? (
+                          <>
+                            {filteredBarangays.slice(0, 10).map((bg) => (
+                              <div
+                                key={bg.id}
+                                onMouseDown={(e) => {
+                                  e.preventDefault();
+                                }}
+                                onClick={() => {
+                                  setBarangay(bg.name);
+                                  setBarangaySearch('');
+                                  setShowBarangayDropdown(false);
+                                }}
+                                style={{
+                                  padding: '12px 16px',
+                                  cursor: 'pointer',
+                                  borderBottom: '1px solid #f3f4f6',
+                                  backgroundColor: barangay === bg.name ? '#ecfdf3' : '#ffffff',
+                                }}
+                                onMouseEnter={(e) => {
+                                  e.currentTarget.style.backgroundColor = '#f9fafb';
+                                }}
+                                onMouseLeave={(e) => {
+                                  e.currentTarget.style.backgroundColor = barangay === bg.name ? '#ecfdf3' : '#ffffff';
+                                }}
+                              >
+                                <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>
+                                  {bg.name}
+                                </IonText>
+                              </div>
+                            ))}
+                            {filteredBarangays.length > 10 && (
+                              <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
+                                Showing first 10 of {filteredBarangays.length} results. Type to narrow down.
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                            No barangay found. Please check your spelling.
+                          </div>
+                        )}
+                      </div>
                     )}
-                  </IonItem>
+                  </div>
 
                   <IonItem
                     lines="none"

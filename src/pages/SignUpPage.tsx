@@ -22,6 +22,8 @@ const SignUpPage: React.FC = () => {
   const [otpCode, setOtpCode] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [generatedOtp, setGeneratedOtp] = useState('');
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const [isResendingOTP, setIsResendingOTP] = useState(false);
   const [truckNo, setTruckNo] = useState('');
   const [availableTrucks, setAvailableTrucks] = useState<string[]>([]);
   const [isLoadingTrucks, setIsLoadingTrucks] = useState(false);
@@ -65,6 +67,16 @@ const SignUpPage: React.FC = () => {
       )
     : barangays;
 
+  // Countdown timer for resend OTP cooldown
+  useEffect(() => {
+    if (resendCooldown > 0) {
+      const timer = setTimeout(() => {
+        setResendCooldown(resendCooldown - 1);
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [resendCooldown]);
+
   // Load available trucks when role changes to collector
   useEffect(() => {
     const loadAvailableTrucks = async () => {
@@ -99,13 +111,17 @@ const SignUpPage: React.FC = () => {
   };
 
   // Send OTP via email using EmailJS or similar service
-  const sendOTP = async () => {
+  const sendOTP = async (isResend: boolean = false) => {
     // Email validation
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(email)) {
       setAlertMessage('Please enter a valid email address first');
       setShowAlert(true);
       return;
+    }
+
+    if (isResend) {
+      setIsResendingOTP(true);
     }
 
     const otp = generateOTP();
@@ -124,23 +140,40 @@ const SignUpPage: React.FC = () => {
       const emailSent = await sendOTPEmail(email, otp);
       
       if (emailSent) {
+        // Successfully sent - set cooldown timer (10 seconds)
         setOtpSent(true);
-        setAlertMessage(`OTP has been sent to ${email}. Please check your inbox.`);
-        setShowAlert(true);
+        setResendCooldown(10); // 10 second cooldown
+        if (isResend) {
+          setAlertMessage('OTP resent successfully!');
+          setShowAlert(true);
+        } else {
+          // First time sending OTP
+          setAlertMessage('OTP sent successfully!');
+          setShowAlert(true);
+        }
       } else {
-        // Fallback: Show OTP in alert (for development/testing)
-        // In production, configure EmailJS in src/services/emailService.ts
-        setOtpSent(true);
-        setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+        // Email failed to send - show error
+        setAlertMessage(`Failed to send OTP email. Please try again.`);
         setShowAlert(true);
       }
     } catch (error) {
       console.error('Error sending OTP:', error);
-      // Fallback for development
-      setOtpSent(true);
-      setAlertMessage(`OTP sent to ${email}. Your OTP code is: ${otp}. Please configure EmailJS in src/services/emailService.ts for production use.`);
+      // Show error message if something went wrong
+      setAlertMessage(`Error sending OTP email. Please try again.`);
       setShowAlert(true);
+    } finally {
+      if (isResend) {
+        setIsResendingOTP(false);
+      }
     }
+  };
+
+  // Handle resend OTP
+  const handleResendOTP = async () => {
+    if (resendCooldown > 0) {
+      return; // Still in cooldown, do nothing
+    }
+    await sendOTP(true);
   };
 
   // Validate name (only letters and spaces)
@@ -409,6 +442,7 @@ const SignUpPage: React.FC = () => {
                         setOtpSent(false);
                         setOtpInput('');
                         setGeneratedOtp('');
+                        setResendCooldown(0);
                       }
                     }} 
                     placeholder="you@example.com" 
@@ -431,34 +465,58 @@ const SignUpPage: React.FC = () => {
                     Send OTP to Email
                   </IonButton>
                 ) : (
-                  <IonItem
-                    lines="none"
-                    style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
-                  >
-                    <IonLabel position="stacked">Enter OTP Code</IonLabel>
-                    <IonInput 
-                      required 
-                      type="text" 
-                      value={otpInput} 
-                      onIonInput={(e) => setOtpInput(e.detail.value!.replace(/\D/g, '').slice(0, 6))} 
-                      placeholder="6-digit code" 
-                      maxlength={6}
-                    />
-                    <IonButton
-                      slot="end"
-                      fill="clear"
-                      size="small"
-                      onClick={() => {
-                        setOtpSent(false);
-                        setOtpInput('');
-                        setGeneratedOtp('');
-                        localStorage.removeItem('signup_otp');
-                      }}
-                      style={{ '--color': '#6b7280', fontSize: '0.75rem' }}
+                  <>
+                    <IonItem
+                      lines="none"
+                      style={{ marginBottom: '0.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                     >
-                      Change Email
-                    </IonButton>
-                  </IonItem>
+                      <IonLabel position="stacked">Enter OTP Code</IonLabel>
+                      <IonInput 
+                        required 
+                        type="text" 
+                        value={otpInput} 
+                        onIonInput={(e) => setOtpInput(e.detail.value!.replace(/\D/g, '').slice(0, 6))} 
+                        placeholder="6-digit code" 
+                        maxlength={6}
+                      />
+                      <IonButton
+                        slot="end"
+                        fill="clear"
+                        size="small"
+                        onClick={() => {
+                          setOtpSent(false);
+                          setOtpInput('');
+                          setGeneratedOtp('');
+                          setResendCooldown(0);
+                          localStorage.removeItem('signup_otp');
+                        }}
+                        style={{ '--color': '#6b7280', fontSize: '0.75rem' }}
+                      >
+                        Change Email
+                      </IonButton>
+                    </IonItem>
+                    <div style={{ marginBottom: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
+                      <IonText style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                        Didn't receive the code?
+                      </IonText>
+                      <IonButton
+                        fill="clear"
+                        size="small"
+                        onClick={handleResendOTP}
+                        disabled={resendCooldown > 0 || isResendingOTP}
+                        style={{
+                          '--color': resendCooldown > 0 ? '#9ca3af' : '#16a34a',
+                          fontSize: '0.75rem',
+                          height: 'auto',
+                          minHeight: 'auto',
+                          margin: 0,
+                          padding: '0.25rem 0.5rem',
+                        }}
+                      >
+                        {isResendingOTP ? 'Sending...' : resendCooldown > 0 ? `Resend (${resendCooldown}s)` : 'Resend OTP'}
+                      </IonButton>
+                    </div>
+                  </>
                 )}
 
                 <IonItem
