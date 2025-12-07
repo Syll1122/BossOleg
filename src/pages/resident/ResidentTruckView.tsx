@@ -161,10 +161,13 @@ const ResidentTruckView: React.FC = () => {
             if (collector.id && collector.truckNo && collector.truckNo.trim() !== '') {
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
+              console.log(`Truck ${collector.truckNo} status:`, status);
               // Only show trucks that are actively collecting
               if (!status || !status.isCollecting) {
+                console.log(`Skipping truck ${collector.truckNo} - not collecting`);
                 continue; // Skip trucks that are not collecting
               }
+              console.log(`Adding truck ${collector.truckNo} to map - is collecting`);
               const isFull = status.isFull || false;
               
               // Use default location (you can enhance this to get actual GPS location)

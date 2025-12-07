@@ -52,6 +52,7 @@ CREATE INDEX IF NOT EXISTS idx_reports_createdat ON reports("createdAt");
 CREATE TABLE IF NOT EXISTS truck_status (
   id TEXT PRIMARY KEY,
   "isFull" BOOLEAN NOT NULL DEFAULT FALSE,
+  "isCollecting" BOOLEAN NOT NULL DEFAULT FALSE,
   "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   "updatedBy" TEXT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE
 );

@@ -70,6 +70,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     loadTruckNo();
   }, []);
 
+  // Set truck as collecting when truckNo is loaded and route page is active
+  useEffect(() => {
+    const setTruckCollecting = async () => {
+      if (!truckNo) return; // Wait for truckNo to be loaded
+      
+      try {
+        const userId = getCurrentUserId();
+        if (userId) {
+          await databaseService.updateTruckStatus(truckNo, false, userId, true);
+          console.log(`Truck ${truckNo} set as collecting`);
+        }
+      } catch (error) {
+        console.error('Error setting truck as collecting:', error);
+      }
+    };
+    
+    setTruckCollecting();
+  }, [truckNo]); // Run whenever truckNo changes
+
   // Create truck icons with dynamic truck number
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
     return L.divIcon({
@@ -379,19 +398,6 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           });
         }
       };
-
-      // Set truck as collecting when route page loads
-      const setTruckCollecting = async () => {
-        try {
-          const userId = getCurrentUserId();
-          if (userId && truckNo) {
-            await databaseService.updateTruckStatus(truckNo, false, userId, true);
-          }
-        } catch (error) {
-          console.error('Error setting truck as collecting:', error);
-        }
-      };
-      setTruckCollecting();
 
       // Get user's actual GPS location first, then place truck there
       if (navigator.geolocation) {
