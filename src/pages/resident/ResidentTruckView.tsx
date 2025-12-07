@@ -1,7 +1,7 @@
 // src/pages/resident/ResidentTruckView.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonText } from '@ionic/react';
+import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonText, IonToast } from '@ionic/react';
 import { arrowBackOutline, busOutline } from 'ionicons/icons';
 import { useHistory } from 'react-router-dom';
 import * as L from 'leaflet';
@@ -162,13 +162,24 @@ const ResidentTruckView: React.FC = () => {
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
               console.log(`Truck ${collector.truckNo} status:`, status);
-              // Only show trucks that are actively collecting
-              if (!status || !status.isCollecting) {
-                console.log(`Skipping truck ${collector.truckNo} - not collecting`);
-                continue; // Skip trucks that are not collecting
+              // Show trucks that are actively collecting or full
+              if (!status || (!status.isCollecting && !status.isFull)) {
+                console.log(`Skipping truck ${collector.truckNo} - not collecting and not full`);
+                // Update previous status for trucks that are not visible
+                previousTruckStatusesRef.current.set(collector.truckNo, {
+                  isCollecting: false,
+                  isFull: false
+                });
+                continue;
               }
               console.log(`Adding truck ${collector.truckNo} to map - is collecting`);
               const isFull = status.isFull || false;
+              
+              // Update previous status for trucks that are visible
+              previousTruckStatusesRef.current.set(collector.truckNo, {
+                isCollecting: status.isCollecting || false,
+                isFull: status.isFull || false
+              });
               
               // Use GPS coordinates from truck_status if available, otherwise use default location
               let truckLat: number;
@@ -194,6 +205,12 @@ const ResidentTruckView: React.FC = () => {
               
               const icon = createTruckIcon(isFull, collector.truckNo);
               const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
+              
+              // Track previous status for newly added trucks
+              previousTruckStatusesRef.current.set(collector.truckNo, {
+                isCollecting: status.isCollecting || false,
+                isFull: status.isFull || false
+              });
               
               // Create popup with report functionality
               const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
@@ -293,14 +310,33 @@ const ResidentTruckView: React.FC = () => {
             const status = await databaseService.getTruckStatus(collector.truckNo);
             const marker = truckMarkersRef.current.get(collector.truckNo);
             
-            // If truck is not collecting, remove it from map
-            if (!status || !status.isCollecting) {
+            // If truck is not collecting and not full, remove it from map
+            // Keep trucks that are full even if not collecting
+            if (!status || (!status.isCollecting && !status.isFull)) {
+              // Check if truck was previously visible (was collecting or full)
+              const previousStatus = previousTruckStatusesRef.current.get(collector.truckNo);
               if (marker && mapRef.current) {
+                // If truck was previously collecting or full, show "done for the day" message
+                if (previousStatus && (previousStatus.isCollecting || previousStatus.isFull)) {
+                  setToastMessage(`Truck ${collector.truckNo} is done for the day`);
+                  setShowToast(true);
+                }
                 mapRef.current.removeLayer(marker);
                 truckMarkersRef.current.delete(collector.truckNo);
               }
+              // Update previous status
+              previousTruckStatusesRef.current.set(collector.truckNo, {
+                isCollecting: false,
+                isFull: false
+              });
               continue;
             }
+            
+            // Update previous status for trucks that are still visible
+            previousTruckStatusesRef.current.set(collector.truckNo, {
+              isCollecting: status.isCollecting || false,
+              isFull: status.isFull || false
+            });
             
             if (marker && mapRef.current) {
               const isFull = status.isFull || false;
@@ -345,8 +381,8 @@ const ResidentTruckView: React.FC = () => {
                   };
                 }
               });
-            } else if (!marker && mapRef.current && status.isCollecting) {
-              // Truck is collecting but marker doesn't exist - add it
+            } else if (!marker && mapRef.current && (status.isCollecting || status.isFull)) {
+              // Truck is collecting or full but marker doesn't exist - add it
               // Use GPS coordinates from truck_status if available, otherwise use default
               let truckLat: number;
               let truckLng: number;
@@ -463,6 +499,15 @@ const ResidentTruckView: React.FC = () => {
           </div>
         </div>
       </IonContent>
+
+      <IonToast
+        isOpen={showToast}
+        onDidDismiss={() => setShowToast(false)}
+        message={toastMessage}
+        duration={3000}
+        position="top"
+        color="medium"
+      />
     </IonPage>
   );
 };

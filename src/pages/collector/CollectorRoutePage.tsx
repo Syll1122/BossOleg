@@ -563,10 +563,12 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   // Stop collecting - return to collector home page and reset truck status
   const onStopCollecting = async () => {
     try {
-      // Set truck as not collecting and reset truck status to not full (empty)
+      // Set truck as not collecting and not full - this will make it vanish from resident side
       const userId = getCurrentUserId();
       if (userId && truckNo) {
+        // Set isCollecting = false and isFull = false to remove truck from resident map
         await databaseService.updateTruckStatus(truckNo, false, userId, false);
+        console.log(`Truck ${truckNo} stopped collecting - done for the day`);
       }
       
       // Update marker icon to white if it was red
@@ -591,10 +593,11 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
 
   const onTruckFullConfirm = async () => {
     try {
-      // Update truck status in database
+      // Update truck status in database - set as full and stop collecting
       const userId = getCurrentUserId();
       if (userId) {
-        await databaseService.updateTruckStatus(truckNo, true, userId);
+        // Set isFull = true and isCollecting = false
+        await databaseService.updateTruckStatus(truckNo, true, userId, false);
       }
       
       // Update marker icon to red
@@ -605,6 +608,13 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         }
       }
       
+      // Stop GPS tracking
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      
+      // Redirect back to home page
       if (onBack) {
         onBack();
       }
@@ -617,6 +627,13 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
         }
       }
+      
+      // Stop GPS tracking
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      
       if (onBack) {
         onBack();
       }
