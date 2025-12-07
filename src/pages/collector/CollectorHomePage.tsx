@@ -35,6 +35,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [truckIsFull, setTruckIsFull] = useState(false);
   const [collectorName, setCollectorName] = useState('Manong Collector');
   const [truckNo, setTruckNo] = useState('BCG 11*4');
+  const [scheduleFlags, setScheduleFlags] = useState<Map<string, L.Marker>>(new Map());
   const history = useHistory();
 
   // Schedule locations with coordinates
@@ -79,6 +80,76 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
 
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
+
+    // Load and display all collector trucks on the map
+    const loadAllTrucks = async () => {
+      try {
+        await databaseService.init();
+        const userId = getCurrentUserId();
+        if (!userId) return;
+
+        // Get current user's account
+        const currentAccount = await databaseService.getAccountById(userId);
+        if (!currentAccount?.truckNo) return;
+
+        // Get all collector accounts
+        const collectors = await databaseService.getAccountsByRole('collector');
+        
+        // Create truck icon function
+        const createTruckIcon = (isRed: boolean, truckNumber: string) => {
+          return L.divIcon({
+            html: `
+              <div style="display: flex; flex-direction: column; align-items: center;">
+                <div style="font-size: 24px;">🚛</div>
+                <div style="background: ${isRed ? '#ef4444' : 'white'}; color: ${isRed ? 'white' : '#1f2937'}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); white-space: nowrap;">
+                  ${truckNumber}
+                </div>
+              </div>
+            `,
+            className: isRed ? 'watch-truck-icon watch-truck-icon--red' : 'watch-truck-icon watch-truck-icon--white',
+            iconSize: [50, 42],
+            iconAnchor: [25, 38],
+          });
+        };
+
+        // Add markers for all collector trucks
+        for (const collector of collectors) {
+          if (collector.truckNo && collector.id !== userId) {
+            // Get truck status
+            const status = await databaseService.getTruckStatus(collector.truckNo);
+            const isFull = status?.isFull || false;
+            
+            // Use default location (you can enhance this to get actual GPS location)
+            // For now, placing them at different locations around the center
+            const baseLat = 14.683726;
+            const baseLng = 121.076224;
+            const offset = collectors.indexOf(collector) * 0.002; // Small offset for each truck
+            
+            const truckLat = baseLat + offset;
+            const truckLng = baseLng + offset;
+            
+            const icon = createTruckIcon(isFull, collector.truckNo);
+            const marker = L.marker([truckLat, truckLng], { icon }).addTo(map);
+            marker.bindPopup(`
+              <div style="text-align: center; padding: 0.5rem;">
+                <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 ${collector.truckNo}</div>
+                <div style="font-size: 0.85rem;"><strong>Collector:</strong> ${collector.name}</div>
+                <div style="font-size: 0.85rem; color: ${isFull ? '#ef4444' : '#16a34a'}; margin-top: 0.25rem;">
+                  ${isFull ? '● Full' : '● Available'}
+                </div>
+              </div>
+            `);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading other trucks:', error);
+      }
+    };
+
+    // Wait a bit for map to be fully ready
+    setTimeout(() => {
+      loadAllTrucks();
+    }, 500);
   };
 
   const requestLocationAndStart = async () => {
@@ -272,15 +343,42 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                   key={location.name}
                   type="button"
                   onClick={() => {
-                    // Navigate to route page with selected location
-                    onStartCollecting(location);
+                    // Drop flag on map without starting collection
+                    if (mapRef.current) {
+                      // Remove existing flag for this location if it exists
+                      const existingFlag = scheduleFlags.get(location.name);
+                      if (existingFlag) {
+                        mapRef.current.removeLayer(existingFlag);
+                        scheduleFlags.delete(location.name);
+                        setScheduleFlags(new Map(scheduleFlags));
+                      } else {
+                        // Add new flag
+                        const flagIcon = L.divIcon({
+                          html: '📍',
+                          className: 'watch-stop-icon',
+                          iconSize: [32, 32],
+                          iconAnchor: [16, 32],
+                        });
+                        const marker = L.marker([location.lat, location.lng], { icon: flagIcon }).addTo(mapRef.current);
+                        marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${location.name}</div>`);
+                        marker.openPopup();
+                        
+                        // Center map on the flag
+                        mapRef.current.setView([location.lat, location.lng], 17);
+                        
+                        // Store flag in state
+                        const newFlags = new Map(scheduleFlags);
+                        newFlags.set(location.name, marker);
+                        setScheduleFlags(newFlags);
+                      }
+                    }
                   }}
                   style={{
                     width: '100%',
                     borderRadius: 999,
                     border: 'none',
                     padding: '0.9rem 1.2rem',
-                    backgroundColor: '#16a34a',
+                    backgroundColor: scheduleFlags.has(location.name) ? '#22c55e' : '#16a34a',
                     color: '#ffffff',
                     fontWeight: 600,
                     fontSize: '0.8rem',
@@ -298,7 +396,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     e.currentTarget.style.boxShadow = '0 10px 22px rgba(22,163,74,0.45)';
                   }}
                 >
-                  {location.name}
+                  {scheduleFlags.has(location.name) ? '📍 ' : ''}{location.name}
                 </button>
               ))}
             </div>

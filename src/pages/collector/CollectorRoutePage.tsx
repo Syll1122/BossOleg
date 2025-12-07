@@ -48,6 +48,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [truckNo, setTruckNo] = useState('BCG 11*4');
+  const otherTrucksRef = useRef<Map<string, L.Marker>>(new Map());
   const watchIdRef = useRef<number | null>(null);
 
   // Load truck number from account
@@ -132,6 +133,55 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         // Center map on selected location
         mapRef.current.setView(selectedPos, 17);
       }
+
+      // Load and display all other collector trucks on the map
+      const loadAllTrucks = async () => {
+        try {
+          const userId = getCurrentUserId();
+          if (!userId) return;
+
+          // Get all collector accounts
+          const collectors = await databaseService.getAccountsByRole('collector');
+          const currentTruckNo = truckNo || 'BCG 11*4';
+          
+          // Add markers for all other collector trucks
+          for (const collector of collectors) {
+            if (collector.truckNo && collector.truckNo !== currentTruckNo) {
+              // Get truck status
+              const status = await databaseService.getTruckStatus(collector.truckNo);
+              const isFull = status?.isFull || false;
+              
+              // Use default location (you can enhance this to get actual GPS location)
+              // For now, placing them at different locations around the center
+              const baseLat = 14.683726;
+              const baseLng = 121.076224;
+              const offset = collectors.indexOf(collector) * 0.002; // Small offset for each truck
+              
+              const truckLat = baseLat + offset;
+              const truckLng = baseLng + offset;
+              
+              const icon = createTruckIcon(isFull, collector.truckNo);
+              const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
+              marker.bindPopup(`
+                <div style="text-align: center; padding: 0.5rem;">
+                  <div style="font-weight: 600; margin-bottom: 0.5rem;">🚛 ${collector.truckNo}</div>
+                  <div style="font-size: 0.85rem;"><strong>Collector:</strong> ${collector.name}</div>
+                  <div style="font-size: 0.85rem; color: ${isFull ? '#ef4444' : '#16a34a'}; margin-top: 0.25rem;">
+                    ${isFull ? '● Full' : '● Available'}
+                  </div>
+                </div>
+              `);
+              
+              // Store marker reference
+              otherTrucksRef.current.set(collector.truckNo, marker);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading other trucks:', error);
+        }
+      };
+
+      loadAllTrucks();
 
       // Function to update truck position
       const updateTruckPosition = (lat: number, lng: number) => {
@@ -340,7 +390,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       console.error('Error updating truck status:', error);
       // Still proceed with UI update even if DB fails
       if (truckMarkerRef.current) {
-        truckMarkerRef.current.setIcon(redTruckIcon);
+        const currentTruckNo = truckNo || 'BCG 11*4';
+        truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
       }
       if (onBack) {
         onBack();
@@ -485,6 +536,13 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         searchMarkerRef.current.remove();
         searchMarkerRef.current = null;
       }
+      // Cleanup other truck markers
+      otherTrucksRef.current.forEach((marker) => {
+        if (mapRef.current) {
+          mapRef.current.removeLayer(marker);
+        }
+      });
+      otherTrucksRef.current.clear();
       if (watchIdRef.current !== null && navigator.geolocation) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
