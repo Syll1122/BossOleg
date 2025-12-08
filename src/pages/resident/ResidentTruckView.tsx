@@ -27,6 +27,7 @@ const ResidentTruckView: React.FC = () => {
   const updateIntervalRef = useRef<number | null>(null);
   const previousTruckStatusesRef = useRef<Map<string, { isCollecting: boolean; isFull: boolean }>>(new Map());
   const initialLoadCompleteRef = useRef<boolean>(false); // Track if initial load is complete
+  const visibilityHandlerRef = useRef<(() => void) | null>(null);
   
   // Toast state for notifications
   const [showToast, setShowToast] = useState(false);
@@ -185,6 +186,44 @@ const ResidentTruckView: React.FC = () => {
 
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
+
+    // Invalidate map size to fix rendering issues (ensures full container size is used)
+    // Use multiple attempts with delays to handle various timing scenarios
+    const fixMapSize = () => {
+      if (!mapRef.current) return;
+      
+      // Immediate invalidation
+      mapRef.current.invalidateSize();
+      
+      // Delayed invalidations to catch layout changes
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 100);
+      
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 300);
+      
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 500);
+    };
+
+    // Fix size after a brief delay to ensure container has dimensions
+    requestAnimationFrame(() => {
+      setTimeout(fixMapSize, 50);
+    });
+
+    // Also fix size when window becomes visible (handles tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && mapRef.current) {
+        setTimeout(() => {
+          if (mapRef.current) mapRef.current.invalidateSize();
+        }, 100);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    visibilityHandlerRef.current = handleVisibilityChange;
 
     // Wait for map to be fully initialized before adding markers
     setTimeout(() => {
@@ -573,20 +612,20 @@ const ResidentTruckView: React.FC = () => {
                 marker.setLatLng([truckLat, truckLng]);
                 
                 // Check proximity and create notification if within 400m (only for collecting trucks and online)
-                if (status.isCollecting && residentLocationRef.current) {
-                  const userId = getCurrentUserId();
-                  if (userId) {
-                    checkTruckProximity(
-                      userId,
-                      residentLocationRef.current.lat,
-                      residentLocationRef.current.lng,
-                      collector.truckNo,
-                      truckLat,
-                      truckLng,
-                      collector.name || 'Collector'
-                    );
-                  }
+              if (status.isCollecting && residentLocationRef.current) {
+                const userId = getCurrentUserId();
+                if (userId) {
+                  checkTruckProximity(
+                    userId,
+                    residentLocationRef.current.lat,
+                    residentLocationRef.current.lng,
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
                 }
+              }
                 
                 // Update icon based on status
                 const icon = createTruckIcon(isFull, collector.truckNo);
@@ -749,6 +788,12 @@ const ResidentTruckView: React.FC = () => {
       if (updateIntervalRef.current !== null) {
         clearInterval(updateIntervalRef.current);
         updateIntervalRef.current = null;
+      }
+      
+      // Remove visibility change listener if it exists
+      if (visibilityHandlerRef.current) {
+        document.removeEventListener('visibilitychange', visibilityHandlerRef.current);
+        visibilityHandlerRef.current = null;
       }
     };
   }, []);

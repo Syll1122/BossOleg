@@ -71,11 +71,39 @@ const MapView: React.FC<MapViewProps> = ({ id, center, zoom = 15, onMapReady }) 
       }
     });
 
+    // Wait for container to have proper dimensions, then invalidate size
+    // This fixes the common Leaflet issue where map renders as a small square
+    const invalidateSizeWithDelay = () => {
+      // Use requestAnimationFrame to ensure DOM is fully rendered
+      requestAnimationFrame(() => {
+        if (mapInstanceRef.current) {
+          // Small delay to ensure container has final dimensions
+          setTimeout(() => {
+            if (mapInstanceRef.current) {
+              mapInstanceRef.current.invalidateSize();
+              console.log('Map size invalidated after initialization');
+            }
+          }, 100);
+        }
+      });
+    };
+
+    invalidateSizeWithDelay();
+
+    // Also invalidate on window resize
+    const handleResize = () => {
+      if (mapInstanceRef.current) {
+        mapInstanceRef.current.invalidateSize();
+      }
+    };
+    window.addEventListener('resize', handleResize);
+
     // Notify parent component that map is ready
     onMapReady?.(map);
 
     // Cleanup function
     return () => {
+      window.removeEventListener('resize', handleResize);
       if (mapInstanceRef.current) {
         mapInstanceRef.current.remove();
         mapInstanceRef.current = null;

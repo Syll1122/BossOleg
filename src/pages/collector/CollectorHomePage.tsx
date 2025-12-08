@@ -111,6 +111,42 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
 
+    // Invalidate map size to fix rendering issues (ensures full container size is used)
+    const fixMapSize = () => {
+      if (!mapRef.current) return;
+      
+      // Immediate invalidation
+      mapRef.current.invalidateSize();
+      
+      // Delayed invalidations to catch layout changes
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 100);
+      
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 300);
+      
+      setTimeout(() => {
+        if (mapRef.current) mapRef.current.invalidateSize();
+      }, 500);
+    };
+
+    // Fix size after a brief delay to ensure container has dimensions
+    requestAnimationFrame(() => {
+      setTimeout(fixMapSize, 50);
+    });
+
+    // Also fix size when window becomes visible (handles tab switching)
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && mapRef.current) {
+        setTimeout(() => {
+          if (mapRef.current) mapRef.current.invalidateSize();
+        }, 100);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
     // Load and display all collector trucks on the map
     const loadAllTrucks = async () => {
       try {
