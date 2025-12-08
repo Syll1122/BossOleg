@@ -3,7 +3,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonText, IonToast } from '@ionic/react';
 import { arrowBackOutline, busOutline } from 'ionicons/icons';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { databaseService } from '../../services/database';
@@ -20,6 +20,7 @@ import {
 
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
+  const location = useLocation();
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const residentMarkerRef = useRef<L.Marker | null>(null); // Reference to resident location marker
@@ -305,13 +306,19 @@ const ResidentTruckView: React.FC = () => {
               truckPositions.push([truckLat, truckLng]);
               
               // Check proximity when marker is first added (only for collecting trucks)
-              if (status.isCollecting) {
-                checkTruckProximity(
-                  collector.truckNo,
-                  truckLat,
-                  truckLng,
-                  collector.name || 'Collector'
-                );
+              if (status.isCollecting && residentLocationRef.current) {
+                const userId = getCurrentUserId();
+                if (userId) {
+                  checkTruckProximity(
+                    userId,
+                    residentLocationRef.current.lat,
+                    residentLocationRef.current.lng,
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
+                }
               }
             }
           }
@@ -453,6 +460,17 @@ const ResidentTruckView: React.FC = () => {
     initNotifications();
   }, []);
 
+  // Check URL params for schedule panel (for backward compatibility)
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    if (params.get('showSchedule') === 'true') {
+      // Dispatch event to open global schedule panel
+      window.dispatchEvent(new CustomEvent('openSchedulePanel'));
+      // Clean up URL param
+      history.replace('/resident/truck');
+    }
+  }, [location.search, history]);
+
   // Monitor report status changes periodically
   useEffect(() => {
     const checkReports = async () => {
@@ -555,13 +573,19 @@ const ResidentTruckView: React.FC = () => {
                 marker.setLatLng([truckLat, truckLng]);
                 
                 // Check proximity and create notification if within 400m (only for collecting trucks and online)
-                if (status.isCollecting) {
-                  checkTruckProximity(
-                    collector.truckNo,
-                    truckLat,
-                    truckLng,
-                    collector.name || 'Collector'
-                  );
+                if (status.isCollecting && residentLocationRef.current) {
+                  const userId = getCurrentUserId();
+                  if (userId) {
+                    checkTruckProximity(
+                      userId,
+                      residentLocationRef.current.lat,
+                      residentLocationRef.current.lng,
+                      collector.truckNo,
+                      truckLat,
+                      truckLng,
+                      collector.name || 'Collector'
+                    );
+                  }
                 }
                 
                 // Update icon based on status
@@ -677,13 +701,19 @@ const ResidentTruckView: React.FC = () => {
               truckMarkersRef.current.set(collector.truckNo, newMarker);
               
               // Check proximity when new marker is added (only for collecting trucks and online)
-              if (status.isCollecting && isOnline && isValidCoordinate(truckLat, truckLng)) {
-                checkTruckProximity(
-                  collector.truckNo,
-                  truckLat,
-                  truckLng,
-                  collector.name || 'Collector'
-                );
+              if (status.isCollecting && isOnline && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
+                const userId = getCurrentUserId();
+                if (userId) {
+                  checkTruckProximity(
+                    userId,
+                    residentLocationRef.current.lat,
+                    residentLocationRef.current.lng,
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
+                }
               }
             }
           }

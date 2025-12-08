@@ -99,6 +99,12 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             currentStatus?.longitude
           );
           console.log(`Truck ${truckNo} set as collecting (isFull = false, isCollecting = true)`);
+          
+          // Notify all residents that collection has started
+          const { notifyAllResidentsCollectionStarted } = await import('../../services/residentNotificationService');
+          notifyAllResidentsCollectionStarted().catch(err => 
+            console.error('Error notifying residents:', err)
+          );
         }
       } catch (error) {
         console.error('Error setting truck as collecting:', error);
@@ -411,6 +417,84 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       };
 
       loadAllTrucks();
+
+      // Load collector's own truck position immediately from database (if available)
+      const loadCollectorTruckPosition = async () => {
+        try {
+          const userId = getCurrentUserId();
+          if (!userId || !mapRef.current) return;
+
+          // Get truck number
+          let currentTruckNo = truckNo;
+          if (!currentTruckNo) {
+            const account = await databaseService.getAccountById(userId);
+            if (account?.truckNo) {
+              currentTruckNo = account.truckNo;
+              setTruckNo(account.truckNo);
+            }
+          }
+
+          if (!currentTruckNo) return;
+
+          // Get last known truck status
+          const status = await databaseService.getTruckStatus(currentTruckNo);
+          
+          // If we have last known GPS coordinates, show truck immediately
+          if (status && status.latitude !== undefined && status.longitude !== undefined && 
+              isValidCoordinate(status.latitude, status.longitude)) {
+            const latlng: L.LatLngExpression = [status.latitude, status.longitude];
+            
+            // Create radius circle if it doesn't exist
+            if (!radiusCircleRef.current) {
+              const radiusCircle = L.circle(latlng, {
+                radius: 400,
+                color: '#16a34a',
+                fillColor: '#16a34a',
+                fillOpacity: 0.15,
+                weight: 2,
+                dashArray: '5, 5',
+              }).bindPopup('400m Notification Radius - Residents within this area will be notified').addTo(mapRef.current);
+              radiusCircleRef.current = radiusCircle;
+            } else {
+              radiusCircleRef.current.setLatLng(latlng);
+            }
+
+            // Create truck marker at last known position
+            if (!truckMarkerRef.current || !mapRef.current.hasLayer(truckMarkerRef.current)) {
+              const icon = createTruckIcon(status.isFull || false, currentTruckNo);
+              const marker = L.marker(latlng, { icon }).addTo(mapRef.current);
+              truckMarkerRef.current = marker;
+              
+              const popupContent = createTruckInfoPopup(currentTruckNo, status.latitude, status.longitude);
+              marker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
+              });
+              
+              marker.on('popupopen', () => {
+                const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    marker.closePopup();
+                  };
+                }
+              });
+
+              // Center map on truck location if no selected location
+              if (!selectedLocation) {
+                mapRef.current.setView(latlng, 16);
+              }
+              
+              console.log(`Truck ${currentTruckNo} loaded at last known position: ${status.latitude}, ${status.longitude}`);
+            }
+          }
+        } catch (error) {
+          console.error('Error loading collector truck position:', error);
+        }
+      };
+
+      // Load truck position immediately (before GPS is available)
+      loadCollectorTruckPosition();
 
       // Function to update truck position
       const updateTruckPosition = async (lat: number, lng: number) => {

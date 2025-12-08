@@ -15,7 +15,7 @@ const SCHEDULE_LOCATIONS = [
 const NOTIFICATION_RADIUS_METERS = 400; // 400 meters radius
 
 interface NotificationState {
-  scheduleNotifiedToday: boolean;
+  scheduleNotifiedCount: number; // Count of schedule notifications sent today (max 3)
   lastReportCheck: Map<string, string>; // reportId -> last known status
   notifiedTrucks: Set<string>; // trucks that have already notified
 }
@@ -29,7 +29,7 @@ const notificationStates = new Map<string, NotificationState>();
 function getNotificationState(userId: string): NotificationState {
   if (!notificationStates.has(userId)) {
     notificationStates.set(userId, {
-      scheduleNotifiedToday: false,
+      scheduleNotifiedCount: 0,
       lastReportCheck: new Map(),
       notifiedTrucks: new Set(),
     });
@@ -38,23 +38,37 @@ function getNotificationState(userId: string): NotificationState {
 }
 
 /**
- * Check if we've already notified about today's schedule
+ * Get today's schedule notification count
  */
-function isTodayScheduleNotified(userId: string): boolean {
+function getTodayScheduleNotificationCount(userId: string): number {
   const state = getNotificationState(userId);
   const today = new Date().toDateString();
-  const lastNotified = localStorage.getItem(`schedule_notified_${userId}_${today}`);
-  return lastNotified === 'true' || state.scheduleNotifiedToday;
+  const storedCount = localStorage.getItem(`schedule_notified_count_${userId}_${today}`);
+  
+  if (storedCount) {
+    const count = parseInt(storedCount, 10);
+    state.scheduleNotifiedCount = count;
+    return count;
+  }
+  
+  return state.scheduleNotifiedCount;
 }
 
 /**
- * Mark today's schedule as notified
+ * Check if we can send another schedule notification today (max 3)
  */
-function markScheduleNotifiedToday(userId: string): void {
+function canSendScheduleNotification(userId: string): boolean {
+  return getTodayScheduleNotificationCount(userId) < 3;
+}
+
+/**
+ * Increment today's schedule notification count
+ */
+function incrementScheduleNotificationCount(userId: string): void {
   const state = getNotificationState(userId);
-  state.scheduleNotifiedToday = true;
+  state.scheduleNotifiedCount += 1;
   const today = new Date().toDateString();
-  localStorage.setItem(`schedule_notified_${userId}_${today}`, 'true');
+  localStorage.setItem(`schedule_notified_count_${userId}_${today}`, state.scheduleNotifiedCount.toString());
 }
 
 /**
@@ -62,8 +76,8 @@ function markScheduleNotifiedToday(userId: string): void {
  */
 export async function notifyTodaySchedule(userId: string): Promise<void> {
   try {
-    // Check if already notified today
-    if (isTodayScheduleNotified(userId)) {
+    // Check if we can send another notification today (max 3)
+    if (!canSendScheduleNotification(userId)) {
       return;
     }
 
@@ -85,7 +99,7 @@ export async function notifyTodaySchedule(userId: string): Promise<void> {
       link: '/resident/truck',
     });
 
-    markScheduleNotifiedToday(userId);
+    incrementScheduleNotificationCount(userId);
     console.log('Schedule notification created for user:', userId);
   } catch (error) {
     console.error('Error creating schedule notification:', error);
@@ -236,10 +250,10 @@ export async function initializeResidentNotifications(userId: string): Promise<v
  */
 export function cleanupResidentNotifications(userId: string): void {
   notificationStates.delete(userId);
-  // Clear localStorage entries for this user
+  // Clear localStorage entries for this user (both old boolean and new count-based)
   const keys = Object.keys(localStorage);
   keys.forEach(key => {
-    if (key.startsWith(`schedule_notified_${userId}_`)) {
+    if (key.startsWith(`schedule_notified_${userId}_`) || key.startsWith(`schedule_notified_count_${userId}_`)) {
       localStorage.removeItem(key);
     }
   });
@@ -251,5 +265,46 @@ export function cleanupResidentNotifications(userId: string): void {
 export function resetTruckNotifications(userId: string, truckNo: string): void {
   const state = getNotificationState(userId);
   state.notifiedTrucks.delete(truckNo);
+}
+
+/**
+ * Notify all residents when a collector starts collecting
+ * This sends today's schedule notification to all residents
+ */
+export async function notifyAllResidentsCollectionStarted(): Promise<void> {
+  try {
+    // Get all resident accounts
+    const residents = await databaseService.getAccountsByRole('resident');
+    
+    // Create schedule list
+    const scheduleList = SCHEDULE_LOCATIONS.map(loc => loc.name).join(', ');
+    
+    // Notify each resident (up to 3 times per day per resident)
+    for (const resident of residents) {
+      if (!resident.id) continue;
+      
+      // Check if we can send another notification today (max 3)
+      if (!canSendScheduleNotification(resident.id)) {
+        continue;
+      }
+      
+      // Create schedule notification with special link to open schedule panel
+      await databaseService.createNotification({
+        userId: resident.id,
+        title: '📅 Today\'s Collection Schedule',
+        message: `Collection has started! Today's schedule: ${scheduleList}. Click to view details.`,
+        type: 'info',
+        read: false,
+        link: '/resident/truck?showSchedule=true', // Special link to trigger schedule panel
+      });
+      
+      incrementScheduleNotificationCount(resident.id);
+      console.log(`Schedule notification sent to resident: ${resident.id} (count: ${getTodayScheduleNotificationCount(resident.id)})`);
+    }
+    
+    console.log(`Collection started notifications sent to ${residents.length} residents`);
+  } catch (error) {
+    console.error('Error notifying residents about collection start:', error);
+  }
 }
 

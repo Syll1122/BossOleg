@@ -1,6 +1,6 @@
 // src/App.tsx
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { IonApp, IonRouterOutlet, setupIonicReact } from '@ionic/react';
 import { IonReactRouter } from '@ionic/react-router';
 import { Route } from 'react-router-dom';
@@ -18,7 +18,6 @@ import '@ionic/react/css/display.css';
 
 import './theme/variables.css';
 import './theme/global.css';
-
 import Home from './pages/Home';
 import LoginPage from './pages/LoginPage';
 import SignUpPage from './pages/SignUpPage';
@@ -29,10 +28,26 @@ import ProfilePage from './pages/resident/ProfilePage';
 import ReportPage from './pages/resident/ReportPage';
 import ReportsProgressPage from './pages/resident/ReportsProgressPage';
 import { NotificationProvider } from './contexts/NotificationContext';
+import SchedulePanel from './components/SchedulePanel';
 
 setupIonicReact();
 
 const App: React.FC = () => {
+  const [showSchedulePanel, setShowSchedulePanel] = useState(false);
+
+  // Listen for custom event to open schedule panel from any page
+  useEffect(() => {
+    const handleOpenSchedulePanel = () => {
+      setShowSchedulePanel(true);
+    };
+
+    window.addEventListener('openSchedulePanel', handleOpenSchedulePanel);
+    
+    return () => {
+      window.removeEventListener('openSchedulePanel', handleOpenSchedulePanel);
+    };
+  }, []);
+
   return (
     <NotificationProvider>
       <IonApp>
@@ -50,6 +65,12 @@ const App: React.FC = () => {
             <Route path="/resident/reports" component={ReportsProgressPage} exact />
           </IonRouterOutlet>
         </IonReactRouter>
+        
+        {/* Global Schedule Panel - available from any page */}
+        <SchedulePanel
+          isOpen={showSchedulePanel}
+          onClose={() => setShowSchedulePanel(false)}
+        />
       </IonApp>
     </NotificationProvider>
   );

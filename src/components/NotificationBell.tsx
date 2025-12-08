@@ -13,12 +13,13 @@ import {
   IonSpinner,
 } from '@ionic/react';
 import { notificationsOutline, notifications, checkmarkDoneOutline, trashOutline } from 'ionicons/icons';
-import { useHistory } from 'react-router-dom';
+import { useHistory, useLocation } from 'react-router-dom';
 import { useNotifications } from '../contexts/NotificationContext';
 import './NotificationBell.css';
 
 const NotificationBell: React.FC = () => {
   const history = useHistory();
+  const location = useLocation();
   const {
     notifications,
     unreadCount,
@@ -32,15 +33,25 @@ const NotificationBell: React.FC = () => {
   const popover = useRef<HTMLIonPopoverElement>(null);
 
   const handleNotificationClick = async (notification: any) => {
+    // Close popover immediately
+    setShowPopover(false);
+    
+    // Mark as read
     if (!notification.read) {
       await markAsRead(notification.id);
     }
 
+    // Navigate to link if provided
     if (notification.link) {
-      history.push(notification.link);
+      // If link contains showSchedule, just open the panel without navigating
+      if (notification.link.includes('showSchedule=true')) {
+        // Dispatch custom event to open schedule panel (works from any page)
+        window.dispatchEvent(new CustomEvent('openSchedulePanel'));
+      } else {
+        // For other links, navigate normally
+        history.push(notification.link);
+      }
     }
-
-    setShowPopover(false);
   };
 
   const formatTime = (dateString: string) => {
