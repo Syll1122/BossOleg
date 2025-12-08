@@ -19,6 +19,7 @@ const ResidentTruckView: React.FC = () => {
   const residentMarkerRef = useRef<L.Marker | null>(null); // Reference to resident location marker
   const updateIntervalRef = useRef<number | null>(null);
   const previousTruckStatusesRef = useRef<Map<string, { isCollecting: boolean; isFull: boolean }>>(new Map());
+  const initialLoadCompleteRef = useRef<boolean>(false); // Track if initial load is complete
   
   // Toast state for notifications
   const [showToast, setShowToast] = useState(false);
@@ -183,6 +184,12 @@ const ResidentTruckView: React.FC = () => {
           for (const collector of collectors) {
             // Only show trucks that have valid accounts with truck numbers
             if (collector.id && collector.truckNo && collector.truckNo.trim() !== '') {
+              // Check if marker already exists (avoid duplicates from periodic updates)
+              if (truckMarkersRef.current.has(collector.truckNo)) {
+                console.log(`Truck ${collector.truckNo} already on map, skipping initial load`);
+                continue;
+              }
+              
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
               console.log(`Truck ${collector.truckNo} status:`, status);
@@ -281,9 +288,13 @@ const ResidentTruckView: React.FC = () => {
             // Center on resident location if no trucks are visible
             mapRef.current.setView([residentLocationRef.current.lat, residentLocationRef.current.lng], 16);
           }
+          
+          // Mark initial load as complete
+          initialLoadCompleteRef.current = true;
         } catch (error) {
           console.error('Error loading trucks:', error);
           // Don't set default location - just log the error
+          initialLoadCompleteRef.current = true; // Still mark as complete to allow updates
         }
       };
 
@@ -442,6 +453,11 @@ const ResidentTruckView: React.FC = () => {
   // Set up periodic status updates for all trucks
   useEffect(() => {
     const updateTruckStatuses = async () => {
+      // Skip if map isn't ready yet or initial load hasn't started
+      if (!mapRef.current) {
+        return;
+      }
+      
       try {
         await databaseService.init();
         const collectors = await databaseService.getAccountsByRole('collector');
@@ -593,11 +609,16 @@ const ResidentTruckView: React.FC = () => {
       }
     };
 
-    // Update statuses immediately and then periodically
-    updateTruckStatuses();
+    // Wait a bit for initial load, then start periodic updates
+    // Initial load is handled by loadAllTrucks() in handleMapReady
+    const startDelay = setTimeout(() => {
+      updateTruckStatuses(); // Start updates after initial load
+    }, 2000); // Wait 2 seconds for initial load to complete
+    
     const statusInterval = setInterval(updateTruckStatuses, 3000); // Check every 3 seconds for faster updates
 
     return () => {
+      clearTimeout(startDelay);
       clearInterval(statusInterval);
     };
   }, [history]);
