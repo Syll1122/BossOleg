@@ -36,31 +36,48 @@ const LoginPage: React.FC = () => {
     }
 
     try {
+      // Clear any existing session data before starting new login
+      // This ensures clean state when switching between accounts
+      const previousUserId = localStorage.getItem('watch_user_id');
+      const previousSessionToken = localStorage.getItem('watch_session_token');
+      
+      // Clear previous session from database if exists
+      if (previousUserId && previousSessionToken) {
+        try {
+          await databaseService.deleteSession(previousSessionToken);
+          await databaseService.setUserOnlineStatus(previousUserId, false);
+        } catch (error) {
+          console.warn('Error clearing previous session:', error);
+          // Continue with login even if clearing fails
+        }
+      }
+      
+      // Clear localStorage before proceeding
+      localStorage.removeItem('watch_user_id');
+      localStorage.removeItem('watch_user_role');
+      localStorage.removeItem('watch_user_name');
+      localStorage.removeItem('watch_user_email');
+      localStorage.removeItem('watch_user_username');
+      localStorage.removeItem('watch_session_token');
+
       // Authenticate against Supabase
       const account = await databaseService.authenticate(identifier.trim(), password);
 
       if (account) {
-        // Check if user already has an active session BEFORE proceeding
-        const hasActiveSession = await databaseService.hasActiveSession(account.id);
-        
-        console.log('Session check for user:', account.id, 'Has active session:', hasActiveSession);
-        
-        if (hasActiveSession === true) {
-          console.log('Blocking login - account is already in use');
-          setIsLoading(false);
-          setAlertMessage('This account is being used. Please log out from the other device first.');
-          setShowAlert(true);
-          // Don't proceed with login - return early
-          return;
+        // Delete any existing sessions for this account before creating a new one
+        // This allows users to log in from a new device/browser even if an old session exists
+        try {
+          await databaseService.deleteUserSessions(account.id);
+          console.log('Cleared any existing sessions for account:', account.id);
+        } catch (sessionError: any) {
+          console.warn('Error clearing existing sessions:', sessionError);
+          // Continue with login even if clearing fails
         }
-
-        // Only proceed if no active session was found
-        console.log('No active session found, proceeding with login');
 
         // Generate a unique session token
         const sessionToken = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${account.id}`;
         
-        // Create session in database (this will delete any existing sessions)
+        // Create new session in database
         try {
           await databaseService.createSession(account.id, sessionToken);
           console.log('Session created successfully');
