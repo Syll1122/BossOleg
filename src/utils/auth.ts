@@ -8,8 +8,19 @@ import { databaseService } from '../services/database';
  * Clears all stored user data from localStorage and Supabase session
  */
 export const logout = async (): Promise<void> => {
-  // Get session token before clearing localStorage
+  // Get user ID and session token before clearing localStorage
+  const userId = localStorage.getItem('watch_user_id');
   const sessionToken = localStorage.getItem('watch_session_token');
+  
+  // Mark user as offline in database
+  if (userId) {
+    try {
+      await databaseService.setUserOnlineStatus(userId, false);
+    } catch (error) {
+      console.error('Error updating user offline status:', error);
+      // Continue with logout even if status update fails
+    }
+  }
   
   // Clear session from database if token exists
   if (sessionToken) {
@@ -28,6 +39,14 @@ export const logout = async (): Promise<void> => {
   localStorage.removeItem('watch_user_email');
   localStorage.removeItem('watch_user_username');
   localStorage.removeItem('watch_session_token');
+  
+  // Sign out from Supabase Auth
+  try {
+    const { supabase } = await import('../services/supabase');
+    await supabase.auth.signOut();
+  } catch (error) {
+    console.error('Error signing out from Supabase:', error);
+  }
   
   // Reload to reset app state
   window.location.href = '/login';

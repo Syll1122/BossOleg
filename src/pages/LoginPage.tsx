@@ -68,6 +68,8 @@ const LoginPage: React.FC = () => {
           console.error('Error creating session:', sessionError);
           // If session creation fails, we should still allow login but log the error
         }
+        
+        // Note: setUserOnlineStatus is already called in authenticate() method
 
         // Store user session in localStorage
         localStorage.setItem('watch_user_id', account.id);
