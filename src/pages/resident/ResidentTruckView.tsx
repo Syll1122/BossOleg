@@ -11,6 +11,12 @@ import NotificationBell from '../../components/NotificationBell';
 import { calculateDistance, isValidCoordinate } from '../../utils/coordinates';
 import { getCurrentUserId } from '../../utils/auth';
 import { requestGeolocation } from '../../utils/geolocation';
+import {
+  initializeResidentNotifications,
+  checkTruckProximity,
+  checkReportStatusChanges,
+  resetTruckNotifications,
+} from '../../services/residentNotificationService';
 
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
@@ -27,8 +33,6 @@ const ResidentTruckView: React.FC = () => {
   
   // Resident location and proximity tracking
   const residentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-  const notifiedTrucksRef = useRef<Set<string>>(new Set()); // Track which trucks have already notified
-  const NOTIFICATION_RADIUS_METERS = 400; // 400 meters radius
 
   // Create truck icons with dynamic truck number (matching collector side design)
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
@@ -266,13 +270,19 @@ const ResidentTruckView: React.FC = () => {
               truckPositions.push([truckLat, truckLng]);
               
               // Check proximity when marker is first added (only for collecting trucks)
-              if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
-                checkTruckProximity(
-                  collector.truckNo,
-                  truckLat,
-                  truckLng,
-                  collector.name || 'Collector'
-                );
+              if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
+                const userId = getCurrentUserId();
+                if (userId) {
+                  checkTruckProximity(
+                    userId,
+                    residentLocationRef.current.lat,
+                    residentLocationRef.current.lng,
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
+                }
               }
             }
           }
@@ -329,21 +339,27 @@ const ResidentTruckView: React.FC = () => {
               residentMarkerRef.current = residentMarker;
               
               // Check proximity for all existing trucks now that we have resident location
-              truckMarkersRef.current.forEach((marker, truckNo) => {
-                const latlng = marker.getLatLng();
-                // Get collector info for the truck
-                databaseService.getAccountsByRole('collector').then(collectors => {
-                  const collector = collectors.find(c => c.truckNo === truckNo);
-                  if (collector) {
-                    checkTruckProximity(
-                      truckNo,
-                      latlng.lat,
-                      latlng.lng,
-                      collector.name || 'Collector'
-                    );
-                  }
-                }).catch(err => console.error('Error checking proximity:', err));
-              });
+              const userId = getCurrentUserId();
+              if (userId) {
+                truckMarkersRef.current.forEach((marker, truckNo) => {
+                  const latlng = marker.getLatLng();
+                  // Get collector info for the truck
+                  databaseService.getAccountsByRole('collector').then(collectors => {
+                    const collector = collectors.find(c => c.truckNo === truckNo);
+                    if (collector && residentLocationRef.current) {
+                      checkTruckProximity(
+                        userId,
+                        residentLocationRef.current.lat,
+                        residentLocationRef.current.lng,
+                        truckNo,
+                        latlng.lat,
+                        latlng.lng,
+                        collector.name || 'Collector'
+                      );
+                    }
+                  }).catch(err => console.error('Error checking proximity:', err));
+                });
+              }
             }
           },
           () => {
@@ -396,59 +412,35 @@ const ResidentTruckView: React.FC = () => {
     }, 300);
   };
 
-  // Check if truck is within notification radius and create notification
-  const checkTruckProximity = async (
-    truckNo: string,
-    truckLat: number,
-    truckLng: number,
-    collectorName: string
-  ) => {
-    // Only check if resident location is available
-    if (!residentLocationRef.current) return;
-    
-    const { lat: residentLat, lng: residentLng } = residentLocationRef.current;
-    
-    // Calculate distance in kilometers
-    const distanceKm = calculateDistance(residentLat, residentLng, truckLat, truckLng);
-    
-    // Convert to meters
-    const distanceMeters = distanceKm * 1000;
-    
-    // Check if truck is within 400m radius
-    if (distanceMeters <= NOTIFICATION_RADIUS_METERS) {
-      // Check if we've already notified about this truck
-      if (!notifiedTrucksRef.current.has(truckNo)) {
-        // Create notification
-        const userId = getCurrentUserId();
-        if (userId) {
-          try {
-            await databaseService.createNotification({
-              userId,
-              title: '🚛 Truck Nearby',
-              message: `Truck ${truckNo} (${collectorName}) is within 400m of your location!`,
-              type: 'info',
-              read: false,
-              link: '/resident/truck',
-            });
-            
-            // Mark this truck as notified
-            notifiedTrucksRef.current.add(truckNo);
-            
-            console.log(`Notification created: Truck ${truckNo} is ${Math.round(distanceMeters)}m away`);
-          } catch (error) {
-            console.error('Error creating proximity notification:', error);
-          }
-        }
+
+  // Initialize resident notifications on mount
+  useEffect(() => {
+    const initNotifications = async () => {
+      const userId = getCurrentUserId();
+      if (userId) {
+        await initializeResidentNotifications(userId);
       }
-    } else {
-      // Truck is outside radius - remove from notified set so it can notify again if it comes back
-      // This allows re-notification if the truck leaves and comes back within radius
-      if (notifiedTrucksRef.current.has(truckNo)) {
-        notifiedTrucksRef.current.delete(truckNo);
-        console.log(`Truck ${truckNo} left the 400m radius. Will notify again if it comes back.`);
+    };
+    initNotifications();
+  }, []);
+
+  // Monitor report status changes periodically
+  useEffect(() => {
+    const checkReports = async () => {
+      const userId = getCurrentUserId();
+      if (userId) {
+        await checkReportStatusChanges(userId);
       }
-    }
-  };
+    };
+
+    // Check immediately
+    checkReports();
+
+    // Then check every 30 seconds
+    const reportInterval = setInterval(checkReports, 30000);
+
+    return () => clearInterval(reportInterval);
+  }, []);
 
   // Set up periodic status updates for all trucks
   useEffect(() => {
@@ -487,7 +479,10 @@ const ResidentTruckView: React.FC = () => {
                 isFull: false
               });
               // Remove from notified set when truck stops collecting
-              notifiedTrucksRef.current.delete(collector.truckNo);
+              const userId = getCurrentUserId();
+              if (userId) {
+                resetTruckNotifications(userId, collector.truckNo);
+              }
               continue;
             }
             
@@ -506,13 +501,19 @@ const ResidentTruckView: React.FC = () => {
                 marker.setLatLng([status.latitude, status.longitude]);
                 
                 // Check proximity and create notification if within 400m (only for collecting trucks)
-                if (status.isCollecting) {
-                  checkTruckProximity(
-                    collector.truckNo,
-                    status.latitude,
-                    status.longitude,
-                    collector.name || 'Collector'
-                  );
+                if (status.isCollecting && residentLocationRef.current) {
+                  const userId = getCurrentUserId();
+                  if (userId) {
+                    checkTruckProximity(
+                      userId,
+                      residentLocationRef.current.lat,
+                      residentLocationRef.current.lng,
+                      collector.truckNo,
+                      status.latitude,
+                      status.longitude,
+                      collector.name || 'Collector'
+                    );
+                  }
                 }
               }
               
@@ -593,13 +594,19 @@ const ResidentTruckView: React.FC = () => {
               truckMarkersRef.current.set(collector.truckNo, newMarker);
               
               // Check proximity when new marker is added (only for collecting trucks)
-              if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
-                checkTruckProximity(
-                  collector.truckNo,
-                  truckLat,
-                  truckLng,
-                  collector.name || 'Collector'
-                );
+              if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
+                const userId = getCurrentUserId();
+                if (userId) {
+                  checkTruckProximity(
+                    userId,
+                    residentLocationRef.current.lat,
+                    residentLocationRef.current.lng,
+                    collector.truckNo,
+                    truckLat,
+                    truckLng,
+                    collector.name || 'Collector'
+                  );
+                }
               }
             }
           }
