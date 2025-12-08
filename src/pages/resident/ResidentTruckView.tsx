@@ -33,15 +33,12 @@ const ResidentTruckView: React.FC = () => {
   
   // Resident location and proximity tracking
   const residentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
-<<<<<<< HEAD
-=======
   const notifiedTrucksRef = useRef<Set<string>>(new Set()); // Track which trucks have already notified
   const NOTIFICATION_RADIUS_METERS = 400; // 400 meters radius
   
   // Default location for offline trucks (all trucks go here when collector is offline)
   const DEFAULT_OFFLINE_LOCATION = { lat: 14.683718, lng: 121.076555 };
   const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes - if no update in 5 min, consider offline
->>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
 
   // Create truck icons with dynamic truck number (matching collector side design)
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
@@ -343,22 +340,6 @@ const ResidentTruckView: React.FC = () => {
               truckMarkersRef.current.set(collector.truckNo, marker);
               truckPositions.push([truckLat, truckLng]);
               
-<<<<<<< HEAD
-              // Check proximity when marker is first added (only for collecting trucks)
-              if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
-                const userId = getCurrentUserId();
-                if (userId) {
-                  checkTruckProximity(
-                    userId,
-                    residentLocationRef.current.lat,
-                    residentLocationRef.current.lng,
-                    collector.truckNo,
-                    truckLat,
-                    truckLng,
-                    collector.name || 'Collector'
-                  );
-                }
-=======
               // Check proximity when marker is first added (only for collecting trucks and online)
               // Don't check proximity for offline trucks (using default location)
               if (status.isCollecting && !isUsingDefaultLocation && 
@@ -371,7 +352,6 @@ const ResidentTruckView: React.FC = () => {
                   truckLng,
                   collector.name || 'Collector'
                 );
->>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
             }
           }
@@ -647,25 +627,6 @@ const ResidentTruckView: React.FC = () => {
               
               if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
                   isValidCoordinate(status.latitude, status.longitude)) {
-<<<<<<< HEAD
-                marker.setLatLng([status.latitude, status.longitude]);
-                
-                // Check proximity and create notification if within 400m (only for collecting trucks)
-                if (status.isCollecting && residentLocationRef.current) {
-                  const userId = getCurrentUserId();
-                  if (userId) {
-                    checkTruckProximity(
-                      userId,
-                      residentLocationRef.current.lat,
-                      residentLocationRef.current.lng,
-                      collector.truckNo,
-                      status.latitude,
-                      status.longitude,
-                      collector.name || 'Collector'
-                    );
-                  }
-                }
-=======
                 // Collector is online - use actual GPS coordinates
                 truckLat = status.latitude;
                 truckLng = status.longitude;
@@ -688,7 +649,6 @@ const ResidentTruckView: React.FC = () => {
                   truckLng,
                   collector.name || 'Collector'
                 );
->>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
               
               // Update icon based on status
@@ -798,22 +758,6 @@ const ResidentTruckView: React.FC = () => {
               
               truckMarkersRef.current.set(collector.truckNo, newMarker);
               
-<<<<<<< HEAD
-              // Check proximity when new marker is added (only for collecting trucks)
-              if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
-                const userId = getCurrentUserId();
-                if (userId) {
-                  checkTruckProximity(
-                    userId,
-                    residentLocationRef.current.lat,
-                    residentLocationRef.current.lng,
-                    collector.truckNo,
-                    truckLat,
-                    truckLng,
-                    collector.name || 'Collector'
-                  );
-                }
-=======
               // Check proximity when new marker is added (only for collecting trucks and online)
               // Don't check proximity for offline trucks (using default location)
               if (status.isCollecting && isOnline && 
@@ -825,7 +769,6 @@ const ResidentTruckView: React.FC = () => {
                   truckLng,
                   collector.name || 'Collector'
                 );
->>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
             }
           }
