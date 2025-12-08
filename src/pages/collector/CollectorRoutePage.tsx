@@ -53,6 +53,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const [truckNo, setTruckNo] = useState('');
   const otherTrucksRef = useRef<Map<string, L.Marker>>(new Map());
   const watchIdRef = useRef<number | null>(null);
+  const isCollectingRef = useRef<boolean>(true); // Track if currently collecting to prevent GPS updates after stopping
 
   // Load truck number from account
   useEffect(() => {
@@ -79,6 +80,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       if (!truckNo) return; // Wait for truckNo to be loaded
       
       try {
+        // Set flag to allow GPS updates
+        isCollectingRef.current = true;
+        
         const userId = getCurrentUserId();
         if (userId) {
           // Get current status to preserve GPS coordinates if they exist
@@ -108,14 +112,22 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     return () => {
       const cleanup = async () => {
         try {
+          // Set flag to prevent any further GPS updates
+          isCollectingRef.current = false;
+          
+          // Stop GPS tracking FIRST to prevent any pending updates
+          if (watchIdRef.current !== null && navigator.geolocation) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+          
           const userId = getCurrentUserId();
           if (userId && truckNo) {
             // Get current status to preserve isFull
             const currentStatus = await databaseService.getTruckStatus(truckNo);
             const preserveIsFull = currentStatus?.isFull || false;
             
-            // If truck is full, preserve GPS. Otherwise move to default location when stopping
-            const DEFAULT_OFFLINE_LOCATION = { lat: 14.683718, lng: 121.076555 };
+            // If truck is full, preserve GPS. Otherwise clear GPS when stopping
             if (preserveIsFull) {
               // Truck is full - preserve GPS coordinates
               await databaseService.updateTruckStatus(
@@ -127,13 +139,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 currentStatus?.longitude
               );
             } else {
-              // Truck is not full and stopping - move to default location
-              await databaseService.updateTruckStatus(truckNo, false, userId, false, DEFAULT_OFFLINE_LOCATION.lat, DEFAULT_OFFLINE_LOCATION.lng);
+              // Truck is not full and stopping - clear GPS coordinates (truck will disappear)
+              await databaseService.updateTruckStatus(truckNo, false, userId, false, null, null);
             }
-          }
-          if (watchIdRef.current !== null && navigator.geolocation) {
-            navigator.geolocation.clearWatch(watchIdRef.current);
-            watchIdRef.current = null;
           }
         } catch (error) {
           console.error('Error cleaning up truck status:', error);
@@ -408,6 +416,12 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       const updateTruckPosition = async (lat: number, lng: number) => {
         if (!mapRef.current) return;
         
+        // Don't update GPS if collector has stopped collecting
+        if (!isCollectingRef.current) {
+          console.log('Truck is not collecting, ignoring GPS update');
+          return;
+        }
+        
         if (!isValidCoordinate(lat, lng)) {
           console.error('Invalid GPS coordinates:', lat, lng);
           return;
@@ -456,9 +470,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         }
         
         // Save GPS position to database (for resident map to see) - using truck number from account
+        // Only update if still collecting
         try {
           const userId = getCurrentUserId();
-          if (userId && currentTruckNo) {
+          if (userId && currentTruckNo && isCollectingRef.current) {
             // Update truck status with GPS coordinates and ensure isCollecting is true
             // This associates the truck number with the current location
             await databaseService.updateTruckStatus(currentTruckNo, false, userId, true, lat, lng);
@@ -652,8 +667,16 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             }
 
             // Set up real-time location tracking (watchPosition)
+            // Make sure we're still collecting before setting up watch
+            isCollectingRef.current = true;
             watchIdRef.current = navigator.geolocation.watchPosition(
               (pos) => {
+                // Double-check we're still collecting before updating
+                if (!isCollectingRef.current) {
+                  console.log('Stopped collecting, ignoring GPS update from watchPosition');
+                  return;
+                }
+                
                 const newLat = pos.coords.latitude;
                 const newLng = pos.coords.longitude;
                 
@@ -767,25 +790,26 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   // Stop collecting - return to collector home page and reset truck status
   const onStopCollecting = async () => {
     try {
-      // Set truck as not collecting and not full - move to default location instead of clearing
+      // Set flag to prevent any further GPS updates
+      isCollectingRef.current = false;
+      
+      // Stop GPS tracking FIRST to prevent any pending updates
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      
+      // Set truck as not collecting and not full - clear GPS coordinates (truck will disappear from resident map)
       const userId = getCurrentUserId();
       if (userId && truckNo) {
-        // Default location coordinates (same as resident side default)
-        const DEFAULT_OFFLINE_LOCATION = { lat: 14.683718, lng: 121.076555 };
-        // Set isCollecting = false, isFull = false - set GPS to default location
-        await databaseService.updateTruckStatus(truckNo, false, userId, false, DEFAULT_OFFLINE_LOCATION.lat, DEFAULT_OFFLINE_LOCATION.lng);
-        console.log(`Truck ${truckNo} stopped collecting - moved to default location`);
+        // Set isCollecting = false, isFull = false - clear GPS coordinates (null)
+        await databaseService.updateTruckStatus(truckNo, false, userId, false, null, null);
+        console.log(`Truck ${truckNo} stopped collecting - GPS cleared`);
       }
       
       // Update marker icon to white if it was red
       if (truckMarkerRef.current && truckNo) {
         truckMarkerRef.current.setIcon(createTruckIcon(false, truckNo));
-      }
-      
-      // Stop GPS tracking
-      if (watchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
       }
     } catch (error) {
       console.error('Error resetting truck status:', error);
@@ -799,11 +823,29 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
 
   const onTruckFullConfirm = async () => {
     try {
+      // Set flag to prevent any further GPS updates
+      isCollectingRef.current = false;
+      
+      // Stop GPS tracking FIRST to prevent any pending updates
+      if (watchIdRef.current !== null && navigator.geolocation) {
+        navigator.geolocation.clearWatch(watchIdRef.current);
+        watchIdRef.current = null;
+      }
+      
       // Update truck status in database - set as full and stop collecting
       const userId = getCurrentUserId();
       if (userId) {
-        // Set isFull = true and isCollecting = false
-        await databaseService.updateTruckStatus(truckNo, true, userId, false);
+        // Get current GPS to preserve it (truck is full, so keep last location)
+        const currentStatus = await databaseService.getTruckStatus(truckNo);
+        // Set isFull = true and isCollecting = false, preserve GPS coordinates
+        await databaseService.updateTruckStatus(
+          truckNo, 
+          true, 
+          userId, 
+          false,
+          currentStatus?.latitude,
+          currentStatus?.longitude
+        );
       }
       
       // Update marker icon to red
@@ -812,12 +854,6 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         if (currentTruckNo && truckMarkerRef.current) {
           truckMarkerRef.current.setIcon(createTruckIcon(true, currentTruckNo));
         }
-      }
-      
-      // Stop GPS tracking
-      if (watchIdRef.current !== null && navigator.geolocation) {
-        navigator.geolocation.clearWatch(watchIdRef.current);
-        watchIdRef.current = null;
       }
       
       // Redirect back to home page

@@ -92,3 +92,4 @@ To test offline functionality:
 - The default location coordinates can be changed in the code if needed
 - Offline threshold can be adjusted based on your requirements
 - All trucks (regardless of truck number) use the same default location when offline
+

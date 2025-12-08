@@ -35,3 +35,4 @@ ORDER BY column_name;
 
 SELECT '✅ Login status columns added to accounts table!' as status;
 SELECT 'Users will now be tracked as online/offline in the database' as note;
+

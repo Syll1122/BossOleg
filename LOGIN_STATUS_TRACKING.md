@@ -78,3 +78,4 @@ The login status is automatically maintained - no manual intervention needed:
 - ✅ Login sets user as online
 - ✅ Logout sets user as offline
 - ✅ Truck locations use login status to determine if GPS should be shown
+

@@ -153,3 +153,4 @@ If you just want to test on same Wi-Fi network (no HTTPS):
 3. **Note**: GPS won't work without HTTPS!
 
 For more info, see: `NETWORK_ACCESS.md`
+
