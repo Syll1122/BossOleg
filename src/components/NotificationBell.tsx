@@ -106,7 +106,7 @@ const NotificationBell: React.FC = () => {
         onDidDismiss={() => setShowPopover(false)}
         trigger="notification-trigger"
         side="bottom"
-        alignment="end"
+        alignment="center"
         style={{ '--width': '320px', '--max-height': '500px' }}
       >
         <div style={{ width: '100%', maxHeight: '500px', display: 'flex', flexDirection: 'column', borderRadius: '8px', overflow: 'hidden', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)' }}>

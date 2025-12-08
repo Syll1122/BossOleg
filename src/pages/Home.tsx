@@ -1,6 +1,6 @@
 // src/pages/Home.tsx
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   IonPage,
   IonContent,
@@ -19,9 +19,10 @@ import {
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
 import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline, closeOutline } from 'ionicons/icons';
-import { logout } from '../utils/auth';
+import { logout, getCurrentUserId } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
 import NotificationBell from '../components/NotificationBell';
+import { initializeResidentNotifications, checkReportStatusChanges } from '../services/residentNotificationService';
 
 interface ScheduleItem {
   day: string;
@@ -63,6 +64,37 @@ const Home: React.FC = () => {
     const today = getCurrentDay();
     return allSchedules.filter(schedule => schedule.day !== today);
   };
+
+  // Initialize resident notifications on mount (for residents only)
+  useEffect(() => {
+    const initNotifications = async () => {
+      const userId = getCurrentUserId();
+      if (userId && user?.role === 'resident') {
+        await initializeResidentNotifications(userId);
+      }
+    };
+    initNotifications();
+  }, [user]);
+
+  // Monitor report status changes periodically (for residents only)
+  useEffect(() => {
+    if (user?.role !== 'resident') return;
+
+    const checkReports = async () => {
+      const userId = getCurrentUserId();
+      if (userId) {
+        await checkReportStatusChanges(userId);
+      }
+    };
+
+    // Check immediately
+    checkReports();
+
+    // Then check every 30 seconds
+    const reportInterval = setInterval(checkReports, 30000);
+
+    return () => clearInterval(reportInterval);
+  }, [user]);
 
   return (
     <IonPage>
