@@ -349,14 +349,16 @@ class SupabaseDatabaseService {
     // Get existing status to preserve values if not provided
     const existingStatus = await this.getTruckStatus(truckId);
     
-    // If truck is not collecting and not full, clear GPS coordinates
-    const shouldClearCoordinates = !isFull && isCollecting === false;
+    // Don't clear GPS coordinates - preserve them even when not collecting
+    // This allows trucks to reappear correctly when restarting collection
+    // Only clear if explicitly set to null
+    const shouldClearCoordinates = latitude === null && longitude === null;
     
     const status: TruckStatus = {
       id: truckId,
       isFull,
       isCollecting: isCollecting !== undefined ? isCollecting : (existingStatus?.isCollecting ?? false),
-      // Clear coordinates if truck is stopped, otherwise use provided value or preserve existing
+      // Preserve coordinates unless explicitly cleared (null) or new coordinates provided
       latitude: shouldClearCoordinates ? undefined : (latitude !== undefined ? (latitude === null ? undefined : latitude) : (existingStatus?.latitude)),
       longitude: shouldClearCoordinates ? undefined : (longitude !== undefined ? (longitude === null ? undefined : longitude) : (existingStatus?.longitude)),
       updatedAt: new Date().toISOString(),

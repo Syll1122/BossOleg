@@ -213,9 +213,11 @@ const ResidentTruckView: React.FC = () => {
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
               console.log(`Truck ${collector.truckNo} status:`, status);
-              // Show trucks that are actively collecting or full
-              if (!status || (!status.isCollecting && !status.isFull)) {
-                console.log(`Skipping truck ${collector.truckNo} - not collecting and not full`);
+              
+              // Show trucks that are actively collecting OR full OR stopped (stopped trucks show at default location)
+              // Only skip if status doesn't exist at all
+              if (!status) {
+                console.log(`Skipping truck ${collector.truckNo} - no status found`);
                 // Update previous status for trucks that are not visible
                 previousTruckStatusesRef.current.set(collector.truckNo, {
                   isCollecting: false,
@@ -243,19 +245,47 @@ const ResidentTruckView: React.FC = () => {
               // Collector is online if: logged in AND updated recently (< 5 min)
               const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
               
-              // Determine truck location: use actual GPS if online, default location if offline
+              // Determine truck location: use actual GPS if online and has GPS, default location if offline
               let truckLat: number;
               let truckLng: number;
               let isUsingDefaultLocation = false;
               
-              if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
-                  isValidCoordinate(status.latitude, status.longitude)) {
+              // Determine truck location based on status
+              // If stopped (not collecting, not full), use GPS if available (should be default location), otherwise use default
+              // If collecting or full, require valid GPS
+              const isStopped = !status.isCollecting && !status.isFull;
+              
+              // If truck is stopped, ensure it has GPS coordinates (use default if missing)
+              if (isStopped) {
+                // Stopped trucks should have GPS set to default location
+                // If GPS is missing or invalid, use default location
+                if (status.latitude === undefined || status.longitude === undefined || 
+                    !isValidCoordinate(status.latitude, status.longitude)) {
+                  // Use default location for stopped trucks
+                  status.latitude = DEFAULT_OFFLINE_LOCATION.lat;
+                  status.longitude = DEFAULT_OFFLINE_LOCATION.lng;
+                }
+              } else {
+                // Truck is collecting or full - require valid GPS
+                if (status.latitude === undefined || status.longitude === undefined || 
+                    !isValidCoordinate(status.latitude, status.longitude)) {
+                  // No valid GPS for active truck - skip
+                  console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
+                  if (marker && mapRef.current) {
+                    mapRef.current.removeLayer(marker);
+                    truckMarkersRef.current.delete(collector.truckNo);
+                  }
+                  continue;
+                }
+              }
+              
+              if (isOnline && isValidCoordinate(status.latitude, status.longitude)) {
                 // Collector is online - use actual GPS coordinates
                 truckLat = status.latitude;
                 truckLng = status.longitude;
                 console.log(`Using GPS coordinates for truck ${collector.truckNo} (ONLINE):`, truckLat, truckLng);
               } else {
-                // Collector is offline or no valid GPS - use default location
+                // Collector is offline - use default location
                 truckLat = DEFAULT_OFFLINE_LOCATION.lat;
                 truckLng = DEFAULT_OFFLINE_LOCATION.lng;
                 isUsingDefaultLocation = true;
@@ -514,20 +544,61 @@ const ResidentTruckView: React.FC = () => {
             const status = await databaseService.getTruckStatus(collector.truckNo);
             const marker = truckMarkersRef.current.get(collector.truckNo);
             
-            // If truck is not collecting and not full, remove it from map
+            // If truck is not collecting and not full, move it to default location instead of removing
             // Keep trucks that are full even if not collecting
             if (!status || (!status.isCollecting && !status.isFull)) {
-              // Check if truck was previously visible (was collecting or full)
-              const previousStatus = previousTruckStatusesRef.current.get(collector.truckNo);
-              if (marker && mapRef.current) {
-                // If truck was previously collecting or full, show "done for the day" message
-                if (previousStatus && (previousStatus.isCollecting || previousStatus.isFull)) {
-                  setToastMessage(`Truck ${collector.truckNo} is done for the day`);
-                  setShowToast(true);
+              // Truck stopped collecting - move to default location if GPS exists
+              if (status && status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                // Truck has GPS - move marker to that location (should be default location)
+                if (marker && mapRef.current) {
+                  marker.setLatLng([status.latitude, status.longitude]);
+                  
+                  // Check if collector is online (check both login status and recent update)
+                  const now = new Date().getTime();
+                  const lastUpdate = new Date(status.updatedAt).getTime();
+                  const timeSinceUpdate = now - lastUpdate;
+                  const isLoggedIn = loginStatusMap.get(collector.id) || false;
+                  const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
+                  
+                  // Update icon and popup
+                  const isFull = false;
+                  const icon = createTruckIcon(isFull, collector.truckNo);
+                  marker.setIcon(icon);
+                  
+                  const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, status.latitude, status.longitude, isOnline);
+                  marker.bindPopup(popupContent, {
+                    className: 'custom-truck-popup',
+                    closeButton: false,
+                  });
+                } else if (mapRef.current && status.latitude && status.longitude) {
+                  // Marker doesn't exist but truck has location - add it at default location
+                  const isFull = false;
+                  const icon = createTruckIcon(isFull, collector.truckNo);
+                  const newMarker = L.marker([status.latitude, status.longitude], { icon }).addTo(mapRef.current);
+                  
+                  const now = new Date().getTime();
+                  const lastUpdate = new Date(status.updatedAt).getTime();
+                  const timeSinceUpdate = now - lastUpdate;
+                  const isLoggedIn = loginStatusMap.get(collector.id) || false;
+                  const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
+                  
+                  const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, status.latitude, status.longitude, isOnline);
+                  newMarker.bindPopup(popupContent, {
+                    className: 'custom-truck-popup',
+                    closeButton: false,
+                  });
+                  
+                  truckMarkersRef.current.set(collector.truckNo, newMarker);
                 }
-                mapRef.current.removeLayer(marker);
-                truckMarkersRef.current.delete(collector.truckNo);
+              } else {
+                // No GPS coordinates - remove from map
+                if (marker && mapRef.current) {
+                  mapRef.current.removeLayer(marker);
+                  truckMarkersRef.current.delete(collector.truckNo);
+                }
               }
+              
               // Update previous status
               previousTruckStatusesRef.current.set(collector.truckNo, {
                 isCollecting: false,
@@ -625,6 +696,13 @@ const ResidentTruckView: React.FC = () => {
               });
             } else if (!marker && mapRef.current && (status.isCollecting || status.isFull)) {
               // Truck is collecting or full but marker doesn't exist - add it
+              // Double-check marker doesn't exist (prevent duplicates from race conditions)
+              const existingMarker = truckMarkersRef.current.get(collector.truckNo);
+              if (existingMarker && mapRef.current.hasLayer(existingMarker)) {
+                console.log(`Truck ${collector.truckNo} marker already exists, skipping creation`);
+                continue;
+              }
+              
               // Check if collector is online (check both login status and recent update)
               const now = new Date().getTime();
               const lastUpdate = new Date(status.updatedAt).getTime();
@@ -636,12 +714,18 @@ const ResidentTruckView: React.FC = () => {
               // Collector is online if: logged in AND updated recently (< 5 min)
               const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
               
+              // Only add marker if truck has valid GPS coordinates (don't show without location)
+              if (status.latitude === undefined || status.longitude === undefined || 
+                  !isValidCoordinate(status.latitude, status.longitude)) {
+                console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
+                continue;
+              }
+              
               // Determine truck location: use actual GPS if online, default location if offline
               let truckLat: number;
               let truckLng: number;
               
-              if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
-                  isValidCoordinate(status.latitude, status.longitude)) {
+              if (isOnline && isValidCoordinate(status.latitude, status.longitude)) {
                 // Collector is online - use actual GPS coordinates
                 truckLat = status.latitude;
                 truckLng = status.longitude;
