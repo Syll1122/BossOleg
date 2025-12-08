@@ -167,3 +167,5 @@ CREATE POLICY "Allow all access to push_subscriptions" ON push_subscriptions
 -- 2. Update your .env file with VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY
 -- 3. Switch your app to use database-supabase.ts instead of database.ts
 
+
+

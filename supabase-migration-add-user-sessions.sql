@@ -38,3 +38,5 @@ CREATE POLICY "Allow all access to user_sessions" ON user_sessions
 -- ✅ Track active user sessions
 -- ✅ Prevent concurrent logins from different devices
 -- ✅ Support session validation during login
+
+

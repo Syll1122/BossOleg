@@ -39,3 +39,5 @@ ORDER BY name;
 -- WHERE a.role = 'resident'
 -- GROUP BY b.id, b.name
 -- ORDER BY resident_count DESC;
+
+

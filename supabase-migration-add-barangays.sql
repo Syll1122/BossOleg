@@ -159,3 +159,5 @@ ON CONFLICT (id) DO NOTHING;
 --
 -- You can query all barangays with:
 -- SELECT * FROM barangays ORDER BY name;
+
+

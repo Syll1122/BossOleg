@@ -219,3 +219,5 @@ WHERE a.name = b.name
 -- ✅ Add all barangays from SignUpPage.tsx
 -- ✅ Skip duplicates (based on name)
 -- ✅ Remove any duplicate entries
+
+

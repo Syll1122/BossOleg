@@ -70,21 +70,6 @@ const ResidentTruckView: React.FC = () => {
     });
   };
 
-
-  // Validate GPS coordinates
-  const isValidCoordinate = (lat: number, lng: number): boolean => {
-    return (
-      typeof lat === 'number' &&
-      typeof lng === 'number' &&
-      !isNaN(lat) &&
-      !isNaN(lng) &&
-      lat >= -90 &&
-      lat <= 90 &&
-      lng >= -180 &&
-      lng <= 180
-    );
-  };
-
   // Create truck popup with report functionality
   const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number) => {
     const popupContent = document.createElement('div');
@@ -560,50 +545,49 @@ const ResidentTruckView: React.FC = () => {
               
               const truckLat = status.latitude;
               const truckLng = status.longitude;
-                const isFull = status.isFull || false;
-                const icon = createTruckIcon(isFull, collector.truckNo);
-                const newMarker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current);
-                
-                const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
-                newMarker.bindPopup(popupContent, {
-                  className: 'custom-truck-popup',
-                  closeButton: false,
-                });
-                
-                newMarker.on('popupopen', () => {
-                  const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
-                  if (reportBtn) {
-                    reportBtn.onclick = () => {
-                      history.push({
-                        pathname: '/resident/report',
-                        state: { truckNo: collector.truckNo }
-                      });
-                    };
-                  }
-                  
-                  const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
-                  if (closeBtn) {
-                    closeBtn.onclick = () => {
-                      newMarker.closePopup();
-                    };
-                  }
-                });
-                
-                truckMarkersRef.current.set(collector.truckNo, newMarker);
-                
-                // Check proximity when new marker is added (only for collecting trucks)
-                if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
-                  checkTruckProximity(
-                    collector.truckNo,
-                    truckLat,
-                    truckLng,
-                    collector.name || 'Collector'
-                  );
+              const isFull = status.isFull || false;
+              const icon = createTruckIcon(isFull, collector.truckNo);
+              const newMarker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current);
+              
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
+              newMarker.bindPopup(popupContent, {
+                className: 'custom-truck-popup',
+                closeButton: false,
+              });
+              
+              newMarker.on('popupopen', () => {
+                const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
+                if (reportBtn) {
+                  reportBtn.onclick = () => {
+                    history.push({
+                      pathname: '/resident/report',
+                      state: { truckNo: collector.truckNo }
+                    });
+                  };
                 }
+                
+                const closeBtn = document.getElementById(`truck-close-btn-${collector.truckNo}`);
+                if (closeBtn) {
+                  closeBtn.onclick = () => {
+                    newMarker.closePopup();
+                  };
+                }
+              });
+              
+              truckMarkersRef.current.set(collector.truckNo, newMarker);
+              
+              // Check proximity when new marker is added (only for collecting trucks)
+              if (status.isCollecting && isValidCoordinate(truckLat, truckLng)) {
+                checkTruckProximity(
+                  collector.truckNo,
+                  truckLat,
+                  truckLng,
+                  collector.name || 'Collector'
+                );
               }
             }
           }
-        }
+          }
       } catch (error) {
         console.error('Error updating truck statuses:', error);
       }

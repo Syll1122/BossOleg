@@ -20,3 +20,5 @@ if (import.meta.env.VITE_SUPABASE_URL && (import.meta.env.VITE_SUPABASE_URL.incl
 
 export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
+
+

@@ -32,3 +32,5 @@ WHERE "collectorId" IS NULL;
 -- 3. Get all residents who reported a specific collector
 -- 
 -- Note: Both truckNo and collectorId are maintained for backward compatibility
+
+

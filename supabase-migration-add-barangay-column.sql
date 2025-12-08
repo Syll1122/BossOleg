@@ -25,3 +25,5 @@ CREATE INDEX IF NOT EXISTS idx_accounts_barangay ON accounts(barangay);
 -- ✅ Store the barangay name selected during signup
 -- ✅ Allow filtering/searching users by barangay
 -- ✅ Support queries like: SELECT * FROM accounts WHERE barangay = 'Holy Spirit'
+
+

@@ -12,3 +12,5 @@ ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 -- DONE!
 -- ==========================================
 -- After running this, verify in Table Editor that truck_status table has latitude and longitude columns
+
+

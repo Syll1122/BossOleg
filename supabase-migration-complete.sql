@@ -30,3 +30,5 @@ ADD COLUMN IF NOT EXISTS longitude DOUBLE PRECISION;
 -- ✅ Show trucks on resident map when collector starts collecting
 -- ✅ Use real GPS coordinates from collector's device
 -- ✅ Update truck positions in real-time
+
+

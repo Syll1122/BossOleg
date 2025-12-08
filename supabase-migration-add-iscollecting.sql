@@ -9,3 +9,5 @@ ADD COLUMN IF NOT EXISTS "isCollecting" BOOLEAN NOT NULL DEFAULT FALSE;
 -- DONE!
 -- ==========================================
 -- After running this, verify in Table Editor that truck_status table has isCollecting column
+
+
