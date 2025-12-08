@@ -121,7 +121,7 @@ class SupabaseDatabaseService {
   }
 
   /**
-   * Authenticate user (check username/email and password)
+   * Authenticate user using Supabase Auth
    */
   async authenticate(identifier: string, password: string): Promise<Account | null> {
     // Try to find by email first, then by username
@@ -134,12 +134,15 @@ class SupabaseDatabaseService {
       return null;
     }
 
-    // In production, use proper password hashing (bcrypt, etc.)
-    if (account.password === password) {
-      return account;
+    // Verify password matches
+    if (account.password !== password) {
+      return null;
     }
-
-    return null;
+    
+    // Mark user as online in database
+    await this.setUserOnlineStatus(account.id, true);
+    
+    return account;
   }
 
   /**
@@ -414,6 +417,110 @@ class SupabaseDatabaseService {
     }
 
     return (data || []) as TruckStatus[];
+  }
+
+  // ========== USER LOGIN STATUS METHODS ==========
+
+  /**
+   * Set user online/offline status in accounts table
+   */
+  async setUserOnlineStatus(userId: string, isOnline: boolean): Promise<void> {
+    try {
+      const updateData: any = {
+        isOnline: isOnline,
+        updatedAt: new Date().toISOString(),
+      };
+      
+      if (isOnline) {
+        updateData.lastLoginAt = new Date().toISOString();
+      } else {
+        updateData.lastLogoutAt = new Date().toISOString();
+      }
+      
+      const { error } = await supabase
+        .from('accounts')
+        .update(updateData)
+        .eq('id', userId);
+      
+      if (error) {
+        console.error('Error updating user online status:', error);
+        // Don't throw - allow login to continue even if status update fails
+      }
+    } catch (error) {
+      console.error('Unexpected error updating user online status:', error);
+      // Don't throw - allow login to continue
+    }
+  }
+
+  /**
+   * Get user online status from accounts table
+   */
+  async getUserOnlineStatus(userId: string): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('isOnline')
+        .eq('id', userId)
+        .single();
+      
+      if (error) {
+        // PGRST116 = no rows found
+        if (error.code === 'PGRST116') {
+          return false;
+        }
+        console.error('Error getting user online status:', error);
+        return false;
+      }
+      
+      return data?.isOnline || false;
+    } catch (error) {
+      console.error('Unexpected error getting user online status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Get online status for multiple users at once (more efficient for batch queries)
+   */
+  async getUsersOnlineStatus(userIds: string[]): Promise<Map<string, boolean>> {
+    const statusMap = new Map<string, boolean>();
+    
+    if (userIds.length === 0) {
+      return statusMap;
+    }
+    
+    try {
+      const { data, error } = await supabase
+        .from('accounts')
+        .select('id, isOnline')
+        .in('id', userIds);
+      
+      if (error) {
+        console.error('Error getting users online status:', error);
+        // Return all as false if error
+        userIds.forEach(id => statusMap.set(id, false));
+        return statusMap;
+      }
+      
+      // Create map from results
+      (data || []).forEach((account: any) => {
+        statusMap.set(account.id, account.isOnline || false);
+      });
+      
+      // Set false for any users not found
+      userIds.forEach(id => {
+        if (!statusMap.has(id)) {
+          statusMap.set(id, false);
+        }
+      });
+      
+      return statusMap;
+    } catch (error) {
+      console.error('Unexpected error getting users online status:', error);
+      // Return all as false on error
+      userIds.forEach(id => statusMap.set(id, false));
+      return statusMap;
+    }
   }
 
   // ========== SESSION MANAGEMENT METHODS ==========

@@ -33,6 +33,15 @@ const ResidentTruckView: React.FC = () => {
   
   // Resident location and proximity tracking
   const residentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
+<<<<<<< HEAD
+=======
+  const notifiedTrucksRef = useRef<Set<string>>(new Set()); // Track which trucks have already notified
+  const NOTIFICATION_RADIUS_METERS = 400; // 400 meters radius
+  
+  // Default location for offline trucks (all trucks go here when collector is offline)
+  const DEFAULT_OFFLINE_LOCATION = { lat: 14.683718, lng: 121.076555 };
+  const OFFLINE_THRESHOLD_MS = 5 * 60 * 1000; // 5 minutes - if no update in 5 min, consider offline
+>>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
 
   // Create truck icons with dynamic truck number (matching collector side design)
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
@@ -76,7 +85,7 @@ const ResidentTruckView: React.FC = () => {
   };
 
   // Create truck popup with report functionality
-  const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number) => {
+  const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number, isOnline: boolean = true) => {
     const popupContent = document.createElement('div');
     popupContent.style.cssText = `
       background: white;
@@ -143,8 +152,20 @@ const ResidentTruckView: React.FC = () => {
             ${isFull ? 'Full' : 'Available'}
           </span>
         </div>
-        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.75rem;">
+        <div style="font-size: 0.8rem; color: #6b7280; margin-bottom: 0.5rem;">
           Lat: ${lat.toFixed(6)}, Lng: ${lng.toFixed(6)}
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.8rem; margin-bottom: 0.75rem;">
+          <span style="
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background-color: ${isOnline ? '#16a34a' : '#6b7280'};
+            display: inline-block;
+          "></span>
+          <span style="color: ${isOnline ? '#16a34a' : '#6b7280'}; font-weight: 500;">
+            ${isOnline ? 'Online (Real-time GPS)' : 'Offline (Default Location)'}
+          </span>
         </div>
         <button 
           id="truck-report-btn-${truckNo}"
@@ -182,6 +203,10 @@ const ResidentTruckView: React.FC = () => {
           // Get all collector accounts
           const collectors = await databaseService.getAccountsByRole('collector');
           
+          // Batch check login status for all collectors (more efficient)
+          const collectorIds = collectors.map(c => c.id).filter(Boolean) as string[];
+          const loginStatusMap = await databaseService.getUsersOnlineStatus(collectorIds);
+          
           const truckPositions: L.LatLngExpression[] = [];
           
           // Add markers for all collector trucks (only those with valid accounts and truck numbers)
@@ -216,16 +241,35 @@ const ResidentTruckView: React.FC = () => {
                 isFull: status.isFull || false
               });
               
-              // Only show trucks with valid GPS coordinates - no default locations
-              if (status.latitude === undefined || status.longitude === undefined || 
-                  !isValidCoordinate(status.latitude, status.longitude)) {
-                console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
-                continue;
-              }
+              // Check if collector is online (check both login status and recent update)
+              const now = new Date().getTime();
+              const lastUpdate = new Date(status.updatedAt).getTime();
+              const timeSinceUpdate = now - lastUpdate;
               
-              const truckLat = status.latitude;
-              const truckLng = status.longitude;
-              console.log(`Using GPS coordinates for truck ${collector.truckNo}:`, truckLat, truckLng);
+              // Get collector's login status from the batch map (already loaded)
+              const isLoggedIn = loginStatusMap.get(collector.id) || false;
+              
+              // Collector is online if: logged in AND updated recently (< 5 min)
+              const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
+              
+              // Determine truck location: use actual GPS if online, default location if offline
+              let truckLat: number;
+              let truckLng: number;
+              let isUsingDefaultLocation = false;
+              
+              if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                // Collector is online - use actual GPS coordinates
+                truckLat = status.latitude;
+                truckLng = status.longitude;
+                console.log(`Using GPS coordinates for truck ${collector.truckNo} (ONLINE):`, truckLat, truckLng);
+              } else {
+                // Collector is offline or no valid GPS - use default location
+                truckLat = DEFAULT_OFFLINE_LOCATION.lat;
+                truckLng = DEFAULT_OFFLINE_LOCATION.lng;
+                isUsingDefaultLocation = true;
+                console.log(`Using default location for truck ${collector.truckNo} (OFFLINE, last update: ${Math.round(timeSinceUpdate / 1000)}s ago)`);
+              }
               
               const icon = createTruckIcon(isFull, collector.truckNo);
               const marker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current!);
@@ -236,8 +280,8 @@ const ResidentTruckView: React.FC = () => {
                 isFull: status.isFull || false
               });
               
-              // Create popup with report functionality
-              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
+              // Create popup with report functionality (pass online status)
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng, isOnline);
               marker.bindPopup(popupContent, {
                 className: 'custom-truck-popup',
                 closeButton: false,
@@ -269,6 +313,7 @@ const ResidentTruckView: React.FC = () => {
               truckMarkersRef.current.set(collector.truckNo, marker);
               truckPositions.push([truckLat, truckLng]);
               
+<<<<<<< HEAD
               // Check proximity when marker is first added (only for collecting trucks)
               if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
                 const userId = getCurrentUserId();
@@ -283,6 +328,20 @@ const ResidentTruckView: React.FC = () => {
                     collector.name || 'Collector'
                   );
                 }
+=======
+              // Check proximity when marker is first added (only for collecting trucks and online)
+              // Don't check proximity for offline trucks (using default location)
+              if (status.isCollecting && !isUsingDefaultLocation && 
+                  isValidCoordinate(truckLat, truckLng) &&
+                  truckLat !== DEFAULT_OFFLINE_LOCATION.lat && 
+                  truckLng !== DEFAULT_OFFLINE_LOCATION.lng) {
+                checkTruckProximity(
+                  collector.truckNo,
+                  truckLat,
+                  truckLng,
+                  collector.name || 'Collector'
+                );
+>>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
             }
           }
@@ -454,6 +513,10 @@ const ResidentTruckView: React.FC = () => {
         await databaseService.init();
         const collectors = await databaseService.getAccountsByRole('collector');
         
+        // Batch check login status for all collectors (more efficient)
+        const collectorIds = collectors.map(c => c.id).filter(Boolean) as string[];
+        const loginStatusMap = await databaseService.getUsersOnlineStatus(collectorIds);
+        
         for (const collector of collectors) {
           if (collector.id && collector.truckNo && collector.truckNo.trim() !== '') {
             const status = await databaseService.getTruckStatus(collector.truckNo);
@@ -495,9 +558,25 @@ const ResidentTruckView: React.FC = () => {
             if (marker && mapRef.current) {
               const isFull = status.isFull || false;
               
-              // Update marker position if GPS coordinates are available
-              if (status.latitude !== undefined && status.longitude !== undefined && 
+              // Check if collector is online (check both login status and recent update)
+              const now = new Date().getTime();
+              const lastUpdate = new Date(status.updatedAt).getTime();
+              const timeSinceUpdate = now - lastUpdate;
+              
+              // Get collector's login status from the batch map (already loaded)
+              const isLoggedIn = loginStatusMap.get(collector.id) || false;
+              
+              // Collector is online if: logged in AND updated recently (< 5 min)
+              const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
+              
+              // Update marker position: use actual GPS if online, default location if offline
+              let truckLat: number;
+              let truckLng: number;
+              let isUsingDefaultLocation = false;
+              
+              if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
                   isValidCoordinate(status.latitude, status.longitude)) {
+<<<<<<< HEAD
                 marker.setLatLng([status.latitude, status.longitude]);
                 
                 // Check proximity and create notification if within 400m (only for collecting trucks)
@@ -515,15 +594,39 @@ const ResidentTruckView: React.FC = () => {
                     );
                   }
                 }
+=======
+                // Collector is online - use actual GPS coordinates
+                truckLat = status.latitude;
+                truckLng = status.longitude;
+              } else {
+                // Collector is offline - use default location
+                truckLat = DEFAULT_OFFLINE_LOCATION.lat;
+                truckLng = DEFAULT_OFFLINE_LOCATION.lng;
+                isUsingDefaultLocation = true;
+              }
+              
+              // Update marker position
+              marker.setLatLng([truckLat, truckLng]);
+              
+              // Check proximity and create notification if within 400m (only for collecting trucks and online)
+              // Don't check proximity for offline trucks (using default location)
+              if (status.isCollecting && isOnline && !isUsingDefaultLocation) {
+                checkTruckProximity(
+                  collector.truckNo,
+                  truckLat,
+                  truckLng,
+                  collector.name || 'Collector'
+                );
+>>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
               
               // Update icon based on status
               const icon = createTruckIcon(isFull, collector.truckNo);
               marker.setIcon(icon);
               
-              // Update popup with new status
+              // Update popup with new status (pass online status)
               const latlng = marker.getLatLng();
-              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, latlng.lat, latlng.lng);
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, latlng.lat, latlng.lng, isOnline);
               marker.bindPopup(popupContent, {
                 className: 'custom-truck-popup',
                 closeButton: false,
@@ -553,20 +656,38 @@ const ResidentTruckView: React.FC = () => {
               });
             } else if (!marker && mapRef.current && (status.isCollecting || status.isFull)) {
               // Truck is collecting or full but marker doesn't exist - add it
-              // Only show trucks with valid GPS coordinates - no default locations
-              if (status.latitude === undefined || status.longitude === undefined || 
-                  !isValidCoordinate(status.latitude, status.longitude)) {
-                console.log(`Skipping truck ${collector.truckNo} - no valid GPS coordinates`);
-                continue;
-              }
+              // Check if collector is online (check both login status and recent update)
+              const now = new Date().getTime();
+              const lastUpdate = new Date(status.updatedAt).getTime();
+              const timeSinceUpdate = now - lastUpdate;
               
-              const truckLat = status.latitude;
-              const truckLng = status.longitude;
+              // Get collector's login status from the batch map (already loaded)
+              const isLoggedIn = loginStatusMap.get(collector.id) || false;
+              
+              // Collector is online if: logged in AND updated recently (< 5 min)
+              const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
+              
+              // Determine truck location: use actual GPS if online, default location if offline
+              let truckLat: number;
+              let truckLng: number;
+              
+              if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
+                  isValidCoordinate(status.latitude, status.longitude)) {
+                // Collector is online - use actual GPS coordinates
+                truckLat = status.latitude;
+                truckLng = status.longitude;
+                console.log(`Adding truck ${collector.truckNo} with GPS coordinates (ONLINE):`, truckLat, truckLng);
+              } else {
+                // Collector is offline - use default location
+                truckLat = DEFAULT_OFFLINE_LOCATION.lat;
+                truckLng = DEFAULT_OFFLINE_LOCATION.lng;
+                console.log(`Adding truck ${collector.truckNo} with default location (OFFLINE, last update: ${Math.round(timeSinceUpdate / 1000)}s ago)`);
+              }
               const isFull = status.isFull || false;
               const icon = createTruckIcon(isFull, collector.truckNo);
               const newMarker = L.marker([truckLat, truckLng], { icon }).addTo(mapRef.current);
               
-              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng);
+              const popupContent = createTruckPopup(collector.truckNo, collector.name || 'N/A', isFull, truckLat, truckLng, isOnline);
               newMarker.bindPopup(popupContent, {
                 className: 'custom-truck-popup',
                 closeButton: false,
@@ -593,6 +714,7 @@ const ResidentTruckView: React.FC = () => {
               
               truckMarkersRef.current.set(collector.truckNo, newMarker);
               
+<<<<<<< HEAD
               // Check proximity when new marker is added (only for collecting trucks)
               if (status.isCollecting && isValidCoordinate(truckLat, truckLng) && residentLocationRef.current) {
                 const userId = getCurrentUserId();
@@ -607,6 +729,19 @@ const ResidentTruckView: React.FC = () => {
                     collector.name || 'Collector'
                   );
                 }
+=======
+              // Check proximity when new marker is added (only for collecting trucks and online)
+              // Don't check proximity for offline trucks (using default location)
+              if (status.isCollecting && isOnline && 
+                  status.latitude !== undefined && status.longitude !== undefined &&
+                  truckLat === status.latitude && truckLng === status.longitude) {
+                checkTruckProximity(
+                  collector.truckNo,
+                  truckLat,
+                  truckLng,
+                  collector.name || 'Collector'
+                );
+>>>>>>> 2ba0a8e8ba900847d5f4a459c3f4b01229e0cec2
               }
             }
           }
