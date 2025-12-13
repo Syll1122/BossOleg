@@ -458,7 +458,7 @@ const SignUpPage: React.FC = () => {
                     expand="block"
                     shape="round"
                     fill="outline"
-                    onClick={sendOTP}
+                    onClick={() => sendOTP()}
                     style={{
                       '--border-color': '#16a34a',
                       '--color': '#16a34a',

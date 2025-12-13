@@ -3,22 +3,14 @@
 buildscript {
     
     repositories {
-        // Use alternative repositories to bypass hosts file blocking dl.google.com
+        // Google Maven repository - must be first for Android tools
+        google()
+        // Maven Central
         mavenCentral()
         gradlePluginPortal()
-        // Maven Central mirror for Android tools
-        maven { url 'https://repo1.maven.org/maven2' }
-        // Alternative Google Maven repository (may also be blocked)
-        maven { 
-            url 'https://maven.google.com'
-            content {
-                includeGroupByRegex "com\\.android.*"
-                includeGroupByRegex "com\\.google.*"
-            }
-        }
     }
     dependencies {
-        classpath 'com.android.tools.build:gradle:8.7.2'
+        classpath 'com.android.tools.build:gradle:8.5.2'
         classpath 'com.google.gms:google-services:4.4.2'
 
         // NOTE: Do not place your application dependencies here; they belong
@@ -30,19 +22,11 @@ apply from: "variables.gradle"
 
 allprojects {
     repositories {
-        // Use alternative repositories to bypass hosts file blocking dl.google.com
+        // Google Maven repository - must be first for Android dependencies
+        google()
+        // Maven Central
         mavenCentral()
         gradlePluginPortal()
-        // Maven Central mirror
-        maven { url 'https://repo1.maven.org/maven2' }
-        // Alternative Google Maven repository
-        maven { 
-            url 'https://maven.google.com'
-            content {
-                includeGroupByRegex "com\\.android.*"
-                includeGroupByRegex "com\\.google.*"
-            }
-        }
     }
 }
 

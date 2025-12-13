@@ -1570,7 +1570,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                           key={day}
                           type="button"
                           onClick={() => handleDayClick(day)}
-                          disabled={isDisabled}
+                          disabled={!!isDisabled}
                           style={{
                             padding: '1rem',
                             borderRadius: 12,

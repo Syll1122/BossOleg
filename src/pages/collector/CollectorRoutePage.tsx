@@ -1,5 +1,3 @@
-Connection refused: getsockopt// src/pages/collector/CollectorRoutePage.tsx
-
 import React, { useEffect, useRef, useState } from 'react';
 import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon, IonSearchbar } from '@ionic/react';
 import * as L from 'leaflet';
@@ -22,9 +20,20 @@ interface ScheduleLocation {
   lng: number;
 }
 
+interface DayLocation {
+  street: string;
+  barangay: string;
+  lat: number;
+  lng: number;
+  scheduleId: string;
+  locationIndex: number;
+}
+
 interface CollectorRoutePageProps {
   onBack?: (stoppedCollecting?: boolean) => void;
   selectedLocation?: ScheduleLocation;
+  selectedDay?: string | null;
+  dayLocations?: DayLocation[];
 }
 
 // Validate GPS coordinates
@@ -1143,7 +1152,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       });
 
       // Place flags for each location using lat/lng from dayLocations
-      dayLocations.forEach((location, index) => {
+      dayLocations.forEach((location: DayLocation, index: number) => {
         const lat = Number(location.lat);
         const lng = Number(location.lng);
 
@@ -1324,7 +1333,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         <IonToolbar style={{ '--background': '#ffffff', '--color': '#111827' }}>
           <IonButtons slot="start">
             <IonButton
-              onClick={onBack}
+              onClick={() => onBack?.()}
               style={{
                 '--color': '#16a34a',
                 borderRadius: 999,

@@ -12,7 +12,7 @@ import {
   IonBadge,
   IonSpinner,
 } from '@ionic/react';
-import { notificationsOutline, notifications, checkmarkDoneOutline, trashOutline } from 'ionicons/icons';
+import { notificationsOutline, notifications as notificationsIcon, checkmarkDoneOutline, trashOutline } from 'ionicons/icons';
 import { useHistory, useLocation } from 'react-router-dom';
 import { useNotifications } from '../contexts/NotificationContext';
 import './NotificationBell.css';
@@ -91,7 +91,7 @@ const NotificationBell: React.FC = () => {
         style={{ position: 'relative' }}
       >
         <IonIcon
-          icon={unreadCount > 0 ? notifications : notificationsOutline}
+          icon={unreadCount > 0 ? notificationsIcon : notificationsOutline}
           style={{ fontSize: '1.5rem' }}
         />
         {unreadCount > 0 && (
