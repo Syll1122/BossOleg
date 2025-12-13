@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Watch App</string>
+    <string name="title_activity_main">Watch App</string>
+    <string name="package_name">com.bossOleg.watchapp</string>
+    <string name="custom_url_scheme">com.bossOleg.watchapp</string>
+</resources>

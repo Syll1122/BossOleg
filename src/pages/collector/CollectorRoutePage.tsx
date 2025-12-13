@@ -1,4 +1,4 @@
-// src/pages/collector/CollectorRoutePage.tsx
+Connection refused: getsockopt// src/pages/collector/CollectorRoutePage.tsx
 
 import React, { useEffect, useRef, useState } from 'react';
 import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon, IonSearchbar } from '@ionic/react';
