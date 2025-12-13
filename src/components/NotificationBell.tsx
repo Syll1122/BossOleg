@@ -88,11 +88,15 @@ const NotificationBell: React.FC = () => {
         id="notification-trigger"
         fill="clear"
         onClick={() => setShowPopover(true)}
-        style={{ position: 'relative' }}
+        style={{ 
+          position: 'relative',
+          minWidth: '48px',
+          height: '48px',
+        }}
       >
         <IonIcon
           icon={unreadCount > 0 ? notificationsIcon : notificationsOutline}
-          style={{ fontSize: '1.5rem' }}
+          style={{ fontSize: '1.75rem' }}
         />
         {unreadCount > 0 && (
           <IonBadge

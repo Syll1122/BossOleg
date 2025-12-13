@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { getDashboardStats, DashboardStats } from '../services/api';
+import LeafLogo from '../components/LeafLogo';
 import './Dashboard.css';
 
 export default function Dashboard() {
@@ -33,41 +34,108 @@ export default function Dashboard() {
   }
 
   const statCards = [
-    { label: 'Total Users', value: stats.totalUsers, icon: '👥', bgColor: 'var(--blue-bg)' },
-    { label: 'Residents', value: stats.totalResidents, icon: '🏠', bgColor: 'var(--green-bg)' },
-    { label: 'Collectors', value: stats.totalCollectors, icon: '🚛', bgColor: 'var(--orange-bg)' },
-    { label: 'Admins', value: stats.totalAdmins, icon: '👑', bgColor: 'var(--purple-bg)' },
-    { label: 'Pending Registrations', value: stats.pendingRegistrations, icon: '⏸️', bgColor: 'var(--yellow-bg)' },
-    { label: 'Total Reports', value: stats.totalReports, icon: '📝', bgColor: 'var(--blue-bg)' },
-    { label: 'Pending Reports', value: stats.pendingReports, icon: '⏳', bgColor: 'var(--yellow-bg)' },
-    { label: 'Resolved Reports', value: stats.resolvedReports, icon: '✅', bgColor: 'var(--green-bg)' },
-    { label: 'Active Trucks', value: stats.activeTrucks, icon: '🚚', bgColor: 'var(--blue-bg)' },
-    { label: 'Total Trucks', value: stats.totalTrucks, icon: '🚛', bgColor: 'var(--gray-bg)' },
+    { 
+      label: 'Total Users', 
+      value: stats.totalUsers, 
+      icon: '👥', 
+      bgColor: 'var(--blue-bg)',
+      hoverColor: 'var(--blue-bg-hover)',
+      accentColor: 'var(--accent-blue)'
+    },
+    { 
+      label: 'Residents', 
+      value: stats.totalResidents, 
+      icon: '🏠', 
+      bgColor: 'var(--green-bg)',
+      hoverColor: 'var(--green-bg-hover)',
+      accentColor: 'var(--primary)'
+    },
+    { 
+      label: 'Collectors', 
+      value: stats.totalCollectors, 
+      icon: '🚛', 
+      bgColor: 'var(--orange-bg)',
+      hoverColor: 'var(--orange-bg-hover)',
+      accentColor: 'var(--accent-orange)'
+    },
+    { 
+      label: 'Admins', 
+      value: stats.totalAdmins, 
+      icon: '👑', 
+      bgColor: 'var(--purple-bg)',
+      hoverColor: 'var(--purple-bg-hover)',
+      accentColor: 'var(--accent-purple)'
+    },
+    { 
+      label: 'Pending Registrations', 
+      value: stats.pendingRegistrations, 
+      icon: '⏸️', 
+      bgColor: 'var(--yellow-bg)',
+      hoverColor: 'var(--yellow-bg-hover)',
+      accentColor: 'var(--accent-yellow)'
+    },
+    { 
+      label: 'Total Reports', 
+      value: stats.totalReports, 
+      icon: '📝', 
+      bgColor: 'var(--blue-bg)',
+      hoverColor: 'var(--blue-bg-hover)',
+      accentColor: 'var(--accent-blue)'
+    },
+    { 
+      label: 'Pending Reports', 
+      value: stats.pendingReports, 
+      icon: '⏳', 
+      bgColor: 'var(--yellow-bg)',
+      hoverColor: 'var(--yellow-bg-hover)',
+      accentColor: 'var(--accent-yellow)'
+    },
+    { 
+      label: 'Resolved Reports', 
+      value: stats.resolvedReports, 
+      icon: '✅', 
+      bgColor: 'var(--green-bg)',
+      hoverColor: 'var(--green-bg-hover)',
+      accentColor: 'var(--success)'
+    },
+    { 
+      label: 'Active Trucks', 
+      value: stats.activeTrucks, 
+      icon: '🚚', 
+      bgColor: 'var(--teal-bg)',
+      hoverColor: 'var(--teal-bg-hover)',
+      accentColor: 'var(--accent-teal)'
+    },
+    { 
+      label: 'Total Trucks', 
+      value: stats.totalTrucks, 
+      icon: '🚛', 
+      bgColor: 'var(--gray-bg)',
+      hoverColor: '#e5e7eb',
+      accentColor: 'var(--secondary)'
+    },
   ];
 
   return (
     <div className="dashboard">
       <div className="dashboard-header">
-        <h1>Dashboard</h1>
-        <p>Overview of your waste collection management system</p>
+        <div className="dashboard-title-section">
+          <div className="dashboard-logo">
+            <LeafLogo size="medium" />
+          </div>
+          <div>
+            <h1>Dashboard</h1>
+            <p>Overview of your Waste Collection Management System</p>
+          </div>
+        </div>
         {stats.pendingRegistrations > 0 && (
-          <div style={{ marginTop: '1rem' }}>
+          <div className="pending-alert">
             <Link 
               to="/registrations" 
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '0.5rem',
-                padding: '0.75rem 1.5rem',
-                background: 'var(--warning)',
-                color: 'white',
-                borderRadius: '0.5rem',
-                textDecoration: 'none',
-                fontWeight: 600,
-                boxShadow: 'var(--shadow)',
-              }}
+              className="pending-link"
             >
-              ⚠️ {stats.pendingRegistrations} Pending Registration{stats.pendingRegistrations !== 1 ? 's' : ''}
+              <span className="alert-icon">⚠️</span>
+              <span>{stats.pendingRegistrations} Pending Registration{stats.pendingRegistrations !== 1 ? 's' : ''}</span>
             </Link>
           </div>
         )}
@@ -75,8 +143,16 @@ export default function Dashboard() {
 
       <div className="stats-grid">
         {statCards.map((card) => (
-          <div key={card.label} className="stat-card">
-            <div className="stat-icon" style={{ backgroundColor: card.bgColor }}>
+          <div 
+            key={card.label} 
+            className="stat-card"
+            style={{
+              '--card-bg': card.bgColor,
+              '--card-hover': card.hoverColor,
+              '--accent': card.accentColor
+            } as React.CSSProperties}
+          >
+            <div className="stat-icon">
               {card.icon}
             </div>
             <div className="stat-content">

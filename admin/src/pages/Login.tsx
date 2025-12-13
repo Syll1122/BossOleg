@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Account } from '../types';
 import { authenticateAdmin, saveAdminSession } from '../services/auth';
+import LeafLogo from '../components/LeafLogo';
 import './Login.css';
 
 interface LoginProps {
@@ -35,11 +36,22 @@ export default function Login({ onLogin }: LoginProps) {
 
   return (
     <div className="login-container">
+      <div className="login-background-decoration">
+        <div className="decoration-circle circle-1"></div>
+        <div className="decoration-circle circle-2"></div>
+        <div className="decoration-circle circle-3"></div>
+      </div>
+      
       <div className="login-card">
-        <h1>Admin Login</h1>
-        <p className="login-subtitle">Waste Collection Management System</p>
+        <div className="login-header">
+          <div className="logo-container">
+            <LeafLogo size="large" />
+          </div>
+          <h1 className="login-title">W.A.T.C.H.</h1>
+          <p className="login-subtitle">Waste Collection Management System</p>
+        </div>
         
-        <form onSubmit={handleSubmit}>
+        <form onSubmit={handleSubmit} className="login-form">
           <div className="input-group">
             <label htmlFor="identifier">Email or Username</label>
             <input
@@ -49,6 +61,7 @@ export default function Login({ onLogin }: LoginProps) {
               onChange={(e) => setIdentifier(e.target.value)}
               required
               autoFocus
+              placeholder="Enter your credentials"
             />
           </div>
 
@@ -60,6 +73,7 @@ export default function Login({ onLogin }: LoginProps) {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              placeholder="Enter your password"
             />
           </div>
 
@@ -67,17 +81,17 @@ export default function Login({ onLogin }: LoginProps) {
 
           <button
             type="submit"
-            className="btn btn-primary"
-            style={{ width: '100%', marginTop: '1rem' }}
+            className="btn btn-primary login-button"
             disabled={loading}
           >
-            {loading ? 'Logging in...' : 'Login'}
+            {loading ? 'Logging in...' : 'Sign In'}
           </button>
         </form>
       </div>
     </div>
   );
 }
+
 
 
 

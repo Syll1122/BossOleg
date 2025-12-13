@@ -1,2 +1,81 @@
-/* For information on how to create your own theme, please refer to:
-http://ionicframework.com/docs/theming/ */
+/* Dark Theme with Black Background and Green/Blue Accents */
+
+:root {
+  /* Primary Colors - Green */
+  --ion-color-primary: #22c55e;
+  --ion-color-primary-rgb: 34, 197, 94;
+  --ion-color-primary-contrast: #ffffff;
+  --ion-color-primary-contrast-rgb: 255, 255, 255;
+  --ion-color-primary-shade: #1db954;
+  --ion-color-primary-tint: #4ade80;
+
+  /* Secondary Colors - Blue */
+  --ion-color-secondary: #3b82f6;
+  --ion-color-secondary-rgb: 59, 130, 246;
+  --ion-color-secondary-contrast: #ffffff;
+  --ion-color-secondary-contrast-rgb: 255, 255, 255;
+  --ion-color-secondary-shade: #3471db;
+  --ion-color-secondary-tint: #5b93f7;
+
+  /* Dark Background Colors */
+  --ion-background-color: #0a0a0a;
+  --ion-background-color-rgb: 10, 10, 10;
+  --ion-background-color-step-50: #1a1a1a;
+  --ion-background-color-step-100: #242424;
+  --ion-background-color-step-150: #2d2d2d;
+  --ion-background-color-step-200: #3a3a3a;
+  --ion-background-color-step-250: #4a4a4a;
+  --ion-background-color-step-300: #5a5a5a;
+
+  /* Text Colors - Light for dark background */
+  --ion-text-color: #ffffff;
+  --ion-text-color-rgb: 255, 255, 255;
+  --ion-text-color-step-400: #e0e0e0;
+  --ion-text-color-step-600: #b0b0b0;
+  --ion-text-color-step-800: #808080;
+  --ion-text-color-step-900: #606060;
+
+  /* Border & Divider */
+  --ion-border-color: #2a2a2a;
+  --ion-item-border-color: #2a2a2a;
+
+  /* Card & Surface - Dark panels */
+  --ion-card-background: #1a1a1a;
+  --ion-toolbar-background: #141414;
+  
+  /* Custom App Colors */
+  --app-bg-primary: #0a0a0a;
+  --app-bg-secondary: #141414;
+  --app-surface: #1a1a1a;
+  --app-surface-elevated: #242424;
+  --app-text-primary: #ffffff;
+  --app-text-secondary: #b0b0b0;
+  --app-border: #2a2a2a;
+  --app-border-light: #3a3a3a;
+  
+  /* Green Accents */
+  --app-green-primary: #22c55e;
+  --app-green-light: #4ade80;
+  --app-green-dark: #16a34a;
+  --app-green-glow: rgba(34, 197, 94, 0.3);
+  
+  /* Blue Accents */
+  --app-blue-primary: #3b82f6;
+  --app-blue-light: #60a5fa;
+  --app-blue-dark: #2563eb;
+  --app-blue-glow: rgba(59, 130, 246, 0.3);
+  
+  /* Dynamic Accent Colors */
+  --app-accent-purple: #a855f7;
+  --app-accent-orange: #f97316;
+  --app-accent-yellow: #eab308;
+  --app-accent-pink: #ec4899;
+  --app-accent-teal: #14b8a6;
+  --app-accent-cyan: #06b6d4;
+  
+  /* Shadows */
+  --app-shadow: rgba(0, 0, 0, 0.5);
+  --app-shadow-lg: rgba(0, 0, 0, 0.8);
+  --app-glow-green: 0 0 20px rgba(34, 197, 94, 0.4);
+  --app-glow-blue: 0 0 20px rgba(59, 130, 246, 0.4);
+}

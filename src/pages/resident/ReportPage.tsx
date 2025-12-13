@@ -8,6 +8,7 @@ import { databaseService } from '../../services/database';
 import NotificationBell from '../../components/NotificationBell';
 import useCurrentUser from '../../state/useCurrentUser';
 import { getCurrentUserId } from '../../utils/auth';
+import RefreshButton from '../../components/RefreshButton';
 
 // Available trucks in the system
 const AVAILABLE_TRUCKS = [
@@ -63,8 +64,7 @@ const ReportPage: React.FC = () => {
     : barangays;
 
   // Load profile address and truck number from navigation state
-  useEffect(() => {
-    const loadInitialData = async () => {
+  const loadInitialData = async () => {
       try {
         await databaseService.init();
         
@@ -86,10 +86,28 @@ const ReportPage: React.FC = () => {
       } catch (error) {
         console.error('Error loading initial data:', error);
       }
-    };
+  };
 
+  useEffect(() => {
     loadInitialData();
   }, [location.state]);
+
+  // Refresh function
+  const handleRefresh = async () => {
+    await loadInitialData();
+    // Reload barangays
+    setIsLoadingBarangays(true);
+    try {
+      await databaseService.init();
+      const barangayList = await databaseService.getAllBarangays();
+      setBarangays(barangayList);
+    } catch (error) {
+      console.error('Error loading barangays:', error);
+      setBarangays([]);
+    } finally {
+      setIsLoadingBarangays(false);
+    }
+  };
 
   const predefinedOptions = [
     'Truck is not going in your street when it supposedly go',
@@ -182,26 +200,33 @@ const ReportPage: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
+        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
           <IonButtons slot="start">
-            <IonButton onClick={() => history.goBack()}>
-              <IonIcon icon={arrowBackOutline} />
+            <IonButton 
+              onClick={() => history.goBack()}
+              style={{
+                minWidth: '48px',
+                height: '48px',
+              }}
+            >
+              <IonIcon icon={arrowBackOutline} style={{ fontSize: '1.75rem' }} />
             </IonButton>
           </IonButtons>
           <IonTitle>Report Issue</IonTitle>
           <IonButtons slot="end">
+            <RefreshButton onRefresh={handleRefresh} variant="header" />
             <NotificationBell />
           </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#ecfdf3', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
             <div className="watch-card" style={{ padding: '1.5rem 1.4rem' }}>
               {!reportType ? (
                 <div>
-                  <h2 style={{ margin: '0 0 1rem', fontSize: '1.2rem', fontWeight: 700 }}>How would you like to report?</h2>
+                    <h2 style={{ margin: '0 0 1rem', fontSize: '1.2rem', fontWeight: 700, color: '#ffffff' }}>How would you like to report?</h2>
                   
                   <button
                     type="button"
@@ -211,8 +236,8 @@ const ReportPage: React.FC = () => {
                       padding: '1rem',
                       marginBottom: '0.75rem',
                       borderRadius: 16,
-                      border: 'none',
-                      background: '#ffffff',
+                      border: '1px solid #2a2a2a',
+                      background: '#1a1a1a',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.75rem',
@@ -220,10 +245,10 @@ const ReportPage: React.FC = () => {
                       cursor: 'pointer',
                     }}
                   >
-                    <IonIcon icon={listOutline} style={{ fontSize: '1.5rem', color: '#16a34a' }} />
+                    <IonIcon icon={listOutline} style={{ fontSize: '1.5rem', color: '#22c55e' }} />
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Select from options</div>
-                      <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.25rem' }}>Choose a predefined issue</div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#ffffff' }}>Select from options</div>
+                      <div style={{ fontSize: '0.8rem', color: '#b0b0b0', marginTop: '0.25rem' }}>Choose a predefined issue</div>
                     </div>
                   </button>
 
@@ -234,8 +259,8 @@ const ReportPage: React.FC = () => {
                       width: '100%',
                       padding: '1rem',
                       borderRadius: 16,
-                      border: 'none',
-                      background: '#ffffff',
+                      border: '1px solid #2a2a2a',
+                      background: '#1a1a1a',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.75rem',
@@ -395,13 +420,13 @@ const ReportPage: React.FC = () => {
                                   padding: '12px 16px',
                                   cursor: 'pointer',
                                   borderBottom: '1px solid #f3f4f6',
-                                  backgroundColor: barangay === bg.name ? '#ecfdf3' : '#ffffff',
+                                  backgroundColor: barangay === bg.name ? '#242424' : '#1a1a1a',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = '#f9fafb';
+                                  e.currentTarget.style.backgroundColor = '#242424';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = barangay === bg.name ? '#ecfdf3' : '#ffffff';
+                                  e.currentTarget.style.backgroundColor = barangay === bg.name ? '#242424' : '#1a1a1a';
                                 }}
                               >
                                 <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>

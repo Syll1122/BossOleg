@@ -346,8 +346,7 @@ const SignUpPage: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             padding: '2.5rem 1.5rem 2rem',
-            background:
-              'radial-gradient(circle at top, rgba(34, 197, 94, 0.3), transparent 60%), #ecfdf3',
+            background: '#0a0a0a',
           }}
         >
           <div style={{ width: '100%', maxWidth: 380 }}>
@@ -357,45 +356,94 @@ const SignUpPage: React.FC = () => {
                 width: '100%',
                 display: 'flex',
                 justifyContent: 'center',
-                marginBottom: '1.25rem',
+                marginBottom: '1.5rem',
               }}
             >
               <div
                 style={{
-                  width: 210,
-                  height: 150,
-                  borderRadius: 24,
+                  width: 220,
+                  height: 160,
+                  borderRadius: 28,
                   background:
-                    'linear-gradient(135deg, #16a34a 0%, #22c55e 35%, #bbf7d0 70%, #ecfdf3 100%)',
+                    'linear-gradient(135deg, #22c55e 0%, #4ade80 25%, #16a34a 50%, #3b82f6 75%, #22c55e 100%)',
+                  backgroundSize: '200% 200%',
                   display: 'flex',
                   alignItems: 'center',
                   justifyContent: 'center',
-                  boxShadow: '0 20px 40px rgba(15,23,42,0.16)',
+                  boxShadow: '0 20px 50px rgba(34, 197, 94, 0.5), 0 0 40px rgba(59, 130, 246, 0.3), 0 10px 20px rgba(0, 0, 0, 0.5)',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  animation: 'gradientShift 8s ease infinite',
                 }}
               >
-                <span role="img" aria-label="recycling truck" style={{ fontSize: '3rem' }}>
+                <style>
+                  {`
+                    @keyframes gradientShift {
+                      0%, 100% { background-position: 0% 50%; }
+                      50% { background-position: 100% 50%; }
+                    }
+                    @keyframes float {
+                      0%, 100% { transform: translateY(0px) rotate(0deg); }
+                      50% { transform: translateY(-10px) rotate(2deg); }
+                    }
+                    @keyframes pulse {
+                      0%, 100% { transform: scale(1); }
+                      50% { transform: scale(1.05); }
+                    }
+                    @keyframes fadeIn {
+                      from { opacity: 0; transform: translateY(-10px); }
+                      to { opacity: 1; transform: translateY(0); }
+                    }
+                  `}
+                </style>
+                <div style={{
+                  position: 'absolute',
+                  top: '-50%',
+                  left: '-50%',
+                  width: '200%',
+                  height: '200%',
+                  background: 'radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%)',
+                  animation: 'pulse 3s ease-in-out infinite',
+                }} />
+                <span 
+                  role="img" 
+                  aria-label="recycling truck" 
+                  style={{ 
+                    fontSize: '4rem',
+                    filter: 'drop-shadow(0 4px 8px rgba(0,0,0,0.3))',
+                    animation: 'float 3s ease-in-out infinite',
+                    position: 'relative',
+                    zIndex: 1,
+                  }}
+                >
                   🚛
                 </span>
               </div>
             </div>
 
             {/* Title and subtitle */}
-            <div style={{ textAlign: 'center', marginBottom: '1.75rem' }}>
+            <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
               <h1
                 style={{
                   margin: 0,
-                  fontSize: '1.75rem',
-                  fontWeight: 700,
-                  color: '#111827',
+                  fontSize: '2rem',
+                  fontWeight: 800,
+                  background: 'linear-gradient(135deg, #22c55e 0%, #4ade80 50%, #3b82f6 100%)',
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                  backgroundClip: 'text',
+                  textShadow: '0 0 30px rgba(34, 197, 94, 0.3)',
+                  letterSpacing: '-0.5px',
                 }}
               >
                 Sign up
               </h1>
               <p
                 style={{
-                  marginTop: '0.5rem',
-                  fontSize: '0.9rem',
-                  color: '#6b7280',
+                  marginTop: '0.75rem',
+                  fontSize: '0.95rem',
+                  color: '#b0b0b0',
+                  lineHeight: '1.5',
                 }}
               >
                 Create an account to manage your waste collection.
@@ -406,9 +454,25 @@ const SignUpPage: React.FC = () => {
               <form onSubmit={onSubmit}>
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Full Name</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Full Name</IonLabel>
                   <IonInput 
                     required 
                     value={name} 
@@ -419,9 +483,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Username</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Username</IonLabel>
                   <IonInput 
                     required 
                     value={username} 
@@ -432,9 +512,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Email</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Email</IonLabel>
                   <IonInput 
                     required 
                     type="email" 
@@ -460,8 +556,8 @@ const SignUpPage: React.FC = () => {
                     fill="outline"
                     onClick={() => sendOTP()}
                     style={{
-                      '--border-color': '#16a34a',
-                      '--color': '#16a34a',
+                      '--border-color': '#22c55e',
+                      '--color': '#22c55e',
                       marginBottom: '0.9rem',
                     }}
                   >
@@ -471,9 +567,25 @@ const SignUpPage: React.FC = () => {
                   <>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '0.5rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ 
+                        marginBottom: '0.5rem', 
+                        borderRadius: 16, 
+                        '--background': '#242424', 
+                        '--color': '#ffffff', 
+                        border: '1px solid #2a2a2a',
+                        boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                        transition: 'all 0.3s ease',
+                      } as any}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = '#22c55e';
+                        e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#2a2a2a';
+                        e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                      }}
                     >
-                      <IonLabel position="stacked">Enter OTP Code</IonLabel>
+                      <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Enter OTP Code</IonLabel>
                       <IonInput 
                         required 
                         type="text" 
@@ -493,13 +605,13 @@ const SignUpPage: React.FC = () => {
                           setResendCooldown(0);
                           localStorage.removeItem('signup_otp');
                         }}
-                        style={{ '--color': '#6b7280', fontSize: '0.75rem' }}
+                        style={{ '--color': '#b0b0b0', fontSize: '0.75rem' }}
                       >
                         Change Email
                       </IonButton>
                     </IonItem>
                     <div style={{ marginBottom: '0.9rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '0 0.5rem' }}>
-                      <IonText style={{ fontSize: '0.75rem', color: '#6b7280' }}>
+                      <IonText style={{ fontSize: '0.75rem', color: '#b0b0b0' }}>
                         Didn't receive the code?
                       </IonText>
                       <IonButton
@@ -508,7 +620,7 @@ const SignUpPage: React.FC = () => {
                         onClick={handleResendOTP}
                         disabled={resendCooldown > 0 || isResendingOTP}
                         style={{
-                          '--color': resendCooldown > 0 ? '#9ca3af' : '#16a34a',
+                          '--color': resendCooldown > 0 ? '#808080' : '#22c55e',
                           fontSize: '0.75rem',
                           height: 'auto',
                           minHeight: 'auto',
@@ -524,9 +636,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Password</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Password</IonLabel>
                   <IonInput 
                     required 
                     type="password" 
@@ -538,9 +666,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Confirm Password</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Confirm Password</IonLabel>
                   <IonInput 
                     required 
                     type="password" 
@@ -551,9 +695,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Address</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Address</IonLabel>
                   <IonInput 
                     required 
                     value={address} 
@@ -565,12 +725,28 @@ const SignUpPage: React.FC = () => {
                 <div style={{ position: 'relative', marginBottom: '0.9rem' }}>
                   <IonItem
                     lines="none"
-                    style={{ borderRadius: 14, '--background': '#f9fafb' } as any}
+                    style={{ 
+                      borderRadius: 16, 
+                      '--background': '#242424', 
+                      '--color': '#ffffff', 
+                      border: '1px solid #2a2a2a',
+                      boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                      transition: 'all 0.3s ease',
+                    } as any}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.borderColor = '#3b82f6';
+                      e.currentTarget.style.boxShadow = '0 4px 16px rgba(59, 130, 246, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.borderColor = '#2a2a2a';
+                      e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                    }}
                   >
-                    <IonLabel position="stacked">Barangay</IonLabel>
+                    <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Barangay</IonLabel>
                     <IonInput 
                       required 
                       value={barangaySearch || barangay}
+                      style={{ '--color': '#ffffff', '--placeholder-color': '#808080', '--background': '#242424' } as any}
                       onIonInput={(e) => {
                         const value = e.detail.value!;
                         setBarangaySearch(value);
@@ -615,8 +791,8 @@ const SignUpPage: React.FC = () => {
                         top: '100%',
                         left: 0,
                         right: 0,
-                        backgroundColor: '#ffffff',
-                        border: '1px solid #e5e7eb',
+                        backgroundColor: '#1a1a1a',
+                        border: '1px solid #2a2a2a',
                         borderRadius: '14px',
                         marginTop: '4px',
                         maxHeight: '200px',
@@ -626,7 +802,7 @@ const SignUpPage: React.FC = () => {
                       }}
                     >
                       {isLoadingBarangays ? (
-                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#b0b0b0', textAlign: 'center' }}>
                           Loading barangays...
                         </div>
                       ) : filteredBarangays.length > 0 ? (
@@ -646,34 +822,39 @@ const SignUpPage: React.FC = () => {
                           style={{
                             padding: '12px 16px',
                             cursor: 'pointer',
-                            borderBottom: '1px solid #f3f4f6',
-                            backgroundColor: barangay === bg.name ? '#ecfdf3' : '#ffffff',
+                            borderBottom: '1px solid #2a2a2a',
+                            backgroundColor: barangay === bg.name ? '#242424' : '#1a1a1a',
+                            transition: 'all 0.2s ease',
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.backgroundColor = '#f9fafb';
+                            e.currentTarget.style.backgroundColor = '#242424';
+                            e.currentTarget.style.transform = 'translateX(4px)';
+                            e.currentTarget.style.borderLeft = '3px solid #3b82f6';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = barangay === bg.name ? '#ecfdf3' : '#ffffff';
+                            e.currentTarget.style.backgroundColor = barangay === bg.name ? '#242424' : '#1a1a1a';
+                            e.currentTarget.style.transform = 'translateX(0)';
+                            e.currentTarget.style.borderLeft = 'none';
                           }}
                         >
-                          <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>
+                          <IonText style={{ fontSize: '0.9rem', color: '#ffffff' }}>
                             {bg.name}
                           </IonText>
                         </div>
                       ))}
                       {filteredBarangays.length === 0 && (
-                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#b0b0b0', textAlign: 'center' }}>
                           No barangay found. Please check your spelling.
                         </div>
                       )}
                       {filteredBarangays.length > 10 && (
-                        <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
+                        <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#b0b0b0', textAlign: 'center', borderTop: '1px solid #2a2a2a' }}>
                           Showing first 10 of {filteredBarangays.length} results. Type to narrow down.
                         </div>
                       )}
                         </>
                       ) : (
-                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                        <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#b0b0b0', textAlign: 'center' }}>
                           No barangay found. Please check your spelling.
                         </div>
                       )}
@@ -683,21 +864,22 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb', position: 'relative' } as any}
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#242424', '--color': '#ffffff', border: '1px solid #2a2a2a', position: 'relative' } as any}
                 >
-                  <IonLabel position="stacked">Phone Number</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Phone Number</IonLabel>
                   <div style={{ position: 'relative', width: '100%' }}>
                     <span style={{
                       position: 'absolute',
                       left: '0.75rem',
                       top: '50%',
                       transform: 'translateY(-50%)',
-                      color: '#111827',
-                      fontWeight: '500',
+                      color: '#ffffff',
+                      fontWeight: '600',
                       pointerEvents: 'none',
                       userSelect: 'none',
-                      zIndex: 1,
-                      fontSize: '1rem'
+                      zIndex: 10,
+                      fontSize: '1rem',
+                      lineHeight: '1'
                     }}>
                       09
                     </span>
@@ -716,6 +898,9 @@ const SignUpPage: React.FC = () => {
                       style={{
                         '--padding-start': '2.5rem',
                         '--padding-end': '0.75rem',
+                        '--color': '#ffffff',
+                        '--placeholder-color': '#808080',
+                        '--background': '#242424'
                       } as any}
                     />
                   </div>
@@ -728,9 +913,25 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ 
+                    marginBottom: '1rem', 
+                    borderRadius: 16, 
+                    '--background': '#242424', 
+                    '--color': '#ffffff', 
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                    transition: 'all 0.3s ease',
+                  } as any}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.borderColor = '#22c55e';
+                    e.currentTarget.style.boxShadow = '0 4px 16px rgba(34, 197, 94, 0.3)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.borderColor = '#2a2a2a';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  }}
                 >
-                  <IonLabel position="stacked">Select Account Type</IonLabel>
+                  <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Select Account Type</IonLabel>
                   <IonSelect
                     interface="popover"
                     placeholder="Choose role"
@@ -752,7 +953,7 @@ const SignUpPage: React.FC = () => {
                     lines="none"
                     style={{ marginBottom: '1.1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
                   >
-                    <IonLabel position="stacked">Select Truck Number</IonLabel>
+                    <IonLabel position="stacked" style={{ '--color': '#b0b0b0' } as any}>Select Truck Number</IonLabel>
                     {isLoadingTrucks ? (
                       <IonText style={{ fontSize: '0.9rem', color: '#6b7280' }}>Loading available trucks...</IonText>
                     ) : availableTrucks.length > 0 ? (
@@ -784,7 +985,7 @@ const SignUpPage: React.FC = () => {
                   shape="round"
                   disabled={isLoading}
                   style={{
-                    '--background': '#16a34a',
+                    '--background': '#22c55e',
                     '--background-activated': '#15803d',
                     marginTop: '0.4rem',
                     marginBottom: '0.75rem',
@@ -797,8 +998,21 @@ const SignUpPage: React.FC = () => {
                   expand="block"
                   shape="round"
                   fill="clear"
-                  style={{ '--color': '#16a34a', fontSize: '0.9rem' }}
+                  style={{ 
+                    '--color': '#22c55e', 
+                    fontSize: '0.9rem',
+                    fontWeight: 600,
+                    transition: 'all 0.3s ease',
+                  }}
                   onClick={() => history.push('/login')}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.setProperty('--color', '#4ade80');
+                    e.currentTarget.style.transform = 'scale(1.05)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.setProperty('--color', '#22c55e');
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
                 >
                   Already have an account? Log In
                 </IonButton>

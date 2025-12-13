@@ -37,7 +37,7 @@ export function getGeolocationErrorMessage(error: GeolocationPositionError): str
       break;
     case error.TIMEOUT:
       baseMessage = 'Location request timed out.';
-      solution = 'Please try again or check your internet connection.';
+      solution = 'GPS signal may be weak. Try moving to an open area or near a window. The app will automatically retry.';
       break;
     default:
       baseMessage = 'An unknown error occurred while getting your location.';
@@ -70,17 +70,25 @@ export function requestGeolocation(
     return;
   }
 
+  // Default options with smart defaults for mobile
+  const defaultOptions: PositionOptions = {
+    enableHighAccuracy: true,
+    timeout: 15000, // 15 seconds default (longer for mobile)
+    maximumAge: 10000, // Allow cached position up to 10 seconds old
+  };
+
+  // Merge user options, allowing overrides
+  const finalOptions: PositionOptions = {
+    ...defaultOptions,
+    ...options,
+  };
+
   navigator.geolocation.getCurrentPosition(
     successCallback,
     (error) => {
       errorCallback(error);
     },
-    {
-      enableHighAccuracy: true,
-      timeout: 10000,
-      maximumAge: 0,
-      ...options,
-    }
+    finalOptions
   );
 }
 

@@ -5,25 +5,52 @@
 }
 
 :root {
-  --primary: #4f46e5;
-  --primary-dark: #4338ca;
+  /* Main Green Theme */
+  --primary: #16a34a;
+  --primary-dark: #15803d;
+  --primary-light: #22c55e;
+  --primary-lighter: #4ade80;
+  --primary-bg: #ecfdf5;
+  
+  /* Accent Colors for Dynamic Design */
   --secondary: #64748b;
+  --accent-blue: #3b82f6;
+  --accent-orange: #f97316;
+  --accent-purple: #a855f7;
+  --accent-yellow: #eab308;
+  --accent-teal: #14b8a6;
+  
+  /* Status Colors */
   --success: #10b981;
   --warning: #f59e0b;
   --danger: #ef4444;
   --info: #3b82f6;
-  --bg: #f8fafc;
+  
+  /* Background & Text */
+  --bg: #f0fdf4;
   --bg-card: #ffffff;
-  --border: #e2e8f0;
-  --text: #1e293b;
-  --text-light: #64748b;
+  --border: #d1fae5;
+  --text: #064e3b;
+  --text-light: #6b7280;
+  
+  /* Shadows */
   --shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
-  --shadow-lg: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+  --shadow-lg: 0 10px 15px -3px rgba(22, 163, 74, 0.15), 0 4px 6px -4px rgba(22, 163, 74, 0.1);
+  --shadow-green: 0 4px 14px 0 rgba(22, 163, 74, 0.2);
+  
+  /* Card Backgrounds with Dynamic Colors */
   --blue-bg: #dbeafe;
+  --blue-bg-hover: #bfdbfe;
   --green-bg: #d1fae5;
+  --green-bg-hover: #a7f3d0;
   --orange-bg: #fed7aa;
+  --orange-bg-hover: #fdba74;
   --purple-bg: #e9d5ff;
+  --purple-bg-hover: #ddd6fe;
   --yellow-bg: #fef3c7;
+  --yellow-bg-hover: #fde68a;
+  --teal-bg: #ccfbf1;
+  --teal-bg-hover: #99f6e4;
   --gray-bg: #f3f4f6;
 }
 
@@ -58,12 +85,15 @@ input, select, textarea {
 }
 
 .btn-primary {
-  background: var(--primary);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
   color: white;
+  box-shadow: 0 4px 6px -1px rgba(22, 163, 74, 0.3);
 }
 
 .btn-primary:hover {
-  background: var(--primary-dark);
+  background: linear-gradient(135deg, var(--primary-dark) 0%, var(--primary) 100%);
+  box-shadow: var(--shadow-green);
+  transform: translateY(-1px);
 }
 
 .btn-danger {
@@ -189,5 +219,5 @@ input, select, textarea {
 .input-group textarea:focus {
   outline: none;
   border-color: var(--primary);
-  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.1);
 }

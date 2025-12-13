@@ -7,6 +7,7 @@ import { useHistory } from 'react-router-dom';
 import useCurrentUser from '../../state/useCurrentUser';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
+import RefreshButton from '../../components/RefreshButton';
 
 const ProfilePage: React.FC = () => {
   const history = useHistory();
@@ -55,51 +56,69 @@ const ProfilePage: React.FC = () => {
     : barangays;
 
   // Load profile data from database when component mounts
-  useEffect(() => {
-    const loadProfile = async () => {
-      try {
-        await databaseService.init();
-        const userId = getCurrentUserId();
-        
-        if (!userId) {
-          setAlertHeader('Error');
-          setAlertMessage('You must be logged in to view your profile.');
-          setShowAlert(true);
-          setIsLoading(false);
-          return;
-        }
-
-        // Get account from database by ID
-        const account = await databaseService.getAccountById(userId);
-
-        if (account) {
-          setName(account.name || '');
-          setAddress(account.address || '');
-          setBarangay(account.barangay || '');
-          setPhoneNumber(account.phoneNumber || '');
-          setTruckNo(account.truckNo || '');
-          
-          // Check if profile is complete
-          const hasData = account.address && account.barangay && account.phoneNumber;
-          setHasProfileData(!!hasData);
-          setIsEditing(false); // Always start in view mode, user can click edit button
-        } else {
-          // If account not found, use current user data
-          setName(user?.name || '');
-          setIsEditing(true); // Start in edit mode if no account
-        }
-      } catch (error: any) {
-        console.error('Error loading profile:', error);
+  const loadProfile = async () => {
+    setIsLoading(true);
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      
+      if (!userId) {
         setAlertHeader('Error');
-        setAlertMessage('Failed to load profile data. Please try again.');
+        setAlertMessage('You must be logged in to view your profile.');
         setShowAlert(true);
-      } finally {
         setIsLoading(false);
+        return;
       }
-    };
 
+      // Get account from database by ID
+      const account = await databaseService.getAccountById(userId);
+
+      if (account) {
+        setName(account.name || '');
+        setAddress(account.address || '');
+        setBarangay(account.barangay || '');
+        setPhoneNumber(account.phoneNumber || '');
+        setTruckNo(account.truckNo || '');
+        
+        // Check if profile is complete
+        const hasData = account.address && account.barangay && account.phoneNumber;
+        setHasProfileData(!!hasData);
+        setIsEditing(false); // Always start in view mode, user can click edit button
+      } else {
+        // If account not found, use current user data
+        setName(user?.name || '');
+        setIsEditing(true); // Start in edit mode if no account
+      }
+    } catch (error: any) {
+      console.error('Error loading profile:', error);
+      setAlertHeader('Error');
+      setAlertMessage('Failed to load profile data. Please try again.');
+      setShowAlert(true);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadProfile();
   }, [user]);
+
+  // Refresh function
+  const handleRefresh = async () => {
+    await loadProfile();
+    // Reload barangays
+    setIsLoadingBarangays(true);
+    try {
+      await databaseService.init();
+      const barangayList = await databaseService.getAllBarangays();
+      setBarangays(barangayList);
+    } catch (error) {
+      console.error('Error loading barangays:', error);
+      setBarangays([]);
+    } finally {
+      setIsLoadingBarangays(false);
+    }
+  };
 
   const handleSave = async () => {
     // Validation
@@ -198,16 +217,25 @@ const ProfilePage: React.FC = () => {
       <IonHeader>
         <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
           <IonButtons slot="start">
-            <IonButton onClick={() => history.goBack()}>
-              <IonIcon icon={arrowBackOutline} />
+            <IonButton 
+              onClick={() => history.goBack()}
+              style={{
+                minWidth: '48px',
+                height: '48px',
+              }}
+            >
+              <IonIcon icon={arrowBackOutline} style={{ fontSize: '1.75rem' }} />
             </IonButton>
           </IonButtons>
           <IonTitle>Profile</IonTitle>
+          <IonButtons slot="end">
+            <RefreshButton onRefresh={handleRefresh} variant="header" />
+          </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#ecfdf3', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
             {isLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
@@ -221,7 +249,8 @@ const ProfilePage: React.FC = () => {
                       width: 64,
                       height: 64,
                       borderRadius: '50%',
-                      backgroundColor: '#ecfdf3',
+                      backgroundColor: '#242424',
+                      border: '1px solid #2a2a2a',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -230,8 +259,8 @@ const ProfilePage: React.FC = () => {
                     <IonIcon icon={personOutline} style={{ fontSize: '2rem', color: '#16a34a' }} />
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700 }}>{user?.name || 'User'}</h2>
-                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#6b7280' }}>{user?.role || 'Resident'}</p>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#ffffff' }}>{user?.name || 'User'}</h2>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#b0b0b0' }}>{user?.role || 'Resident'}</p>
                   </div>
                 </div>
 
@@ -239,7 +268,7 @@ const ProfilePage: React.FC = () => {
                   <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonIcon slot="start" icon={personOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel position="stacked">Full Name</IonLabel>
@@ -248,7 +277,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonIcon slot="start" icon={homeOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel position="stacked">Address</IonLabel>
@@ -415,8 +444,8 @@ const ProfilePage: React.FC = () => {
                       shape="round"
                       disabled={isSaving}
                       style={{
-                        '--background': '#16a34a',
-                        '--background-activated': '#15803d',
+                        '--background': '#22c55e',
+                        '--background-activated': '#16a34a',
                       }}
                     >
                       {isSaving ? 'Saving...' : 'Save Changes'}
@@ -429,7 +458,7 @@ const ProfilePage: React.FC = () => {
                         shape="round"
                         fill="clear"
                         onClick={() => setIsEditing(false)}
-                        style={{ marginTop: '0.5rem', '--color': '#6b7280' }}
+                        style={{ marginTop: '0.5rem', '--color': '#b0b0b0' }}
                       >
                         Cancel
                       </IonButton>
@@ -439,7 +468,7 @@ const ProfilePage: React.FC = () => {
                   <div>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonIcon slot="start" icon={personOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -450,7 +479,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonIcon slot="start" icon={homeOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -461,7 +490,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonIcon slot="start" icon={locationOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -499,8 +528,8 @@ const ProfilePage: React.FC = () => {
                       shape="round"
                       onClick={() => setIsEditing(true)}
                       style={{
-                        '--background': '#16a34a',
-                        '--background-activated': '#15803d',
+                        '--background': '#22c55e',
+                        '--background-activated': '#16a34a',
                         marginTop: '1rem',
                       }}
                     >

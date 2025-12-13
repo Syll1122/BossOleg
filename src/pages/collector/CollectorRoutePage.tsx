@@ -6,6 +6,7 @@ import { busOutline, searchOutline } from 'ionicons/icons';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import { isSecureContext, getGeolocationErrorMessage } from '../../utils/geolocation';
+import RefreshButton from '../../components/RefreshButton';
 
 interface TruckLocation {
   truckId: string;
@@ -65,23 +66,52 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const scheduleFlagRef = useRef<L.Marker | null>(null);
 
   // Load truck number from account
+  const loadTruckNo = async () => {
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      if (userId) {
+        const account = await databaseService.getAccountById(userId);
+        if (account?.truckNo) {
+          setTruckNo(account.truckNo);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading truck number:', error);
+    }
+  };
+
   useEffect(() => {
-    const loadTruckNo = async () => {
+    loadTruckNo();
+  }, []);
+
+  // Refresh function - reloads truck data and updates status
+  const handleRefresh = async () => {
+    await loadTruckNo();
+    // Reload truck status if truckNo is available
+    if (truckNo) {
       try {
-        await databaseService.init();
-        const userId = getCurrentUserId();
-        if (userId) {
-          const account = await databaseService.getAccountById(userId);
-          if (account?.truckNo) {
-            setTruckNo(account.truckNo);
+        const status = await databaseService.getTruckStatus(truckNo);
+        if (status) {
+          // Update truck marker icon based on full status
+          if (truckMarkerRef.current) {
+            truckMarkerRef.current.setIcon(createTruckIcon(status.isFull || false, truckNo));
+          }
+          // Update truck position if coordinates are available
+          if (status.latitude && status.longitude && isValidCoordinate(status.latitude, status.longitude)) {
+            if (truckMarkerRef.current) {
+              truckMarkerRef.current.setLatLng([status.latitude, status.longitude]);
+              if (mapRef.current) {
+                mapRef.current.setView([status.latitude, status.longitude], mapRef.current.getZoom());
+              }
+            }
           }
         }
       } catch (error) {
-        console.error('Error loading truck number:', error);
+        console.error('Error refreshing truck status:', error);
       }
-    };
-    loadTruckNo();
-  }, []);
+    }
+  };
 
   // Set truck as collecting when truckNo is loaded and route page is active
   useEffect(() => {
@@ -1330,19 +1360,25 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#ffffff', '--color': '#111827' }}>
+        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
           <IonButtons slot="start">
             <IonButton
               onClick={() => onBack?.()}
               style={{
                 '--color': '#16a34a',
                 borderRadius: 999,
-                backgroundColor: '#22c55e1a',
+                backgroundColor: 'rgba(34, 197, 94, 0.15)',
                 paddingInline: '0.9rem',
+                minHeight: '48px',
+                fontSize: '1rem',
+                fontWeight: 600,
               }}
             >
               BACK
             </IonButton>
+          </IonButtons>
+          <IonButtons slot="end">
+            <RefreshButton onRefresh={handleRefresh} variant="header" />
           </IonButtons>
           <div
             style={{
@@ -1370,10 +1406,11 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               left: '1rem',
               right: '1rem',
               zIndex: 1000,
-              backgroundColor: 'white',
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #2a2a2a',
               borderRadius: 12,
               padding: '0.5rem',
-              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.6)',
             }}
           >
             <IonSearchbar
@@ -1397,7 +1434,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               onClick={handleSearch}
               style={{
                 marginTop: '0.5rem',
-                '--background': '#16a34a',
+                '--background': '#22c55e',
                 '--color': 'white',
               }}
             >
@@ -1430,11 +1467,11 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               top: '1rem',
               right: '1rem',
               zIndex: 1000,
-              backgroundColor: 'white',
-              border: 'none',
+              backgroundColor: '#1a1a1a',
+              border: '1px solid #2a2a2a',
               borderRadius: 12,
               padding: '0.75rem',
-              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+              boxShadow: '0 4px 12px rgba(0, 0, 0, 0.6)',
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
@@ -1471,11 +1508,11 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 height: 72,
                 borderRadius: 999,
                 border: 'none',
-                backgroundColor: '#eab308',
-                color: '#1f2937',
+                backgroundColor: '#3b82f6',
+                color: '#ffffff',
                 fontWeight: 700,
                 fontSize: '0.9rem',
-                boxShadow: '0 14px 28px rgba(234, 179, 8, 0.6)',
+                boxShadow: '0 14px 28px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)',
                 zIndex: 10001,
                 position: 'relative',
               }}

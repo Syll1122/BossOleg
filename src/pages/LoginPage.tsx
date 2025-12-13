@@ -207,22 +207,23 @@ const LoginPage: React.FC = () => {
       <IonContent fullscreen>
         <div
           style={{
-            minHeight: '100%',
+            minHeight: '100vh',
             display: 'flex',
             flexDirection: 'column',
             alignItems: 'center',
-            padding: '3rem 1.5rem 2rem',
-            background:
-              'radial-gradient(circle at top, rgba(34, 197, 94, 0.3), transparent 60%), #ecfdf3',
+            justifyContent: 'center',
+            padding: '2rem 1.5rem',
+            background: '#0a0a0a',
           }}
         >
           <div
             style={{
               width: '100%',
               maxWidth: 380,
-              background: '#ffffff',
+              background: '#1a1a1a',
+              border: '1px solid #2a2a2a',
               borderRadius: 28,
-              boxShadow: '0 20px 45px rgba(15, 23, 42, 0.16)',
+              boxShadow: '0 20px 45px rgba(0, 0, 0, 0.6)',
               overflow: 'hidden',
             }}
           >
@@ -244,7 +245,7 @@ const LoginPage: React.FC = () => {
               <form onSubmit={onSubmit}>
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 16, '--background': '#f9fafb' } as any}
+                  style={{ marginBottom: '0.9rem', borderRadius: 16, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                 >
                   <IonLabel position="stacked">Username or Email</IonLabel>
                   <IonInput 
@@ -270,7 +271,7 @@ const LoginPage: React.FC = () => {
                     justifyContent: 'flex-end',
                     fontSize: '0.8rem',
                     marginBottom: '0.9rem',
-                    color: '#6b7280',
+                    color: '#b0b0b0',
                   }}
                 >
                   <button
@@ -280,7 +281,7 @@ const LoginPage: React.FC = () => {
                       border: 'none',
                       background: 'transparent',
                       padding: 0,
-                      color: '#4b286d',
+                      color: '#3b82f6',
                       cursor: 'pointer',
                     }}
                   >
@@ -294,8 +295,8 @@ const LoginPage: React.FC = () => {
                       padding: '1rem',
                       marginBottom: '0.9rem',
                       borderRadius: 12,
-                      background: '#f3f4fb',
-                      border: '1px solid #e5e7eb',
+                      background: '#242424',
+                      border: '1px solid #2a2a2a',
                     }}
                   >
                     <IonText style={{ fontSize: '0.9rem', fontWeight: 600, marginBottom: '0.5rem', display: 'block' }}>
@@ -306,7 +307,7 @@ const LoginPage: React.FC = () => {
                     </IonText>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '0.75rem', borderRadius: 12, '--background': '#ffffff' } as any}
+                      style={{ marginBottom: '0.75rem', borderRadius: 12, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
                     >
                       <IonLabel position="stacked">Email Address</IonLabel>
                       <IonInput
@@ -324,8 +325,8 @@ const LoginPage: React.FC = () => {
                         disabled={isSendingPassword}
                         onClick={handleForgotPassword}
                         style={{
-                          '--background': '#16a34a',
-                          '--background-activated': '#15803d',
+                          '--background': '#22c55e',
+                          '--background-activated': '#16a34a',
                           flex: 1,
                         }}
                       >
@@ -341,8 +342,8 @@ const LoginPage: React.FC = () => {
                           setForgotPasswordEmail('');
                         }}
                         style={{
-                          '--border-color': '#6b7280',
-                          '--color': '#6b7280',
+                          '--border-color': '#3a3a3a',
+                          '--color': '#b0b0b0',
                         }}
                       >
                         Cancel
@@ -351,25 +352,32 @@ const LoginPage: React.FC = () => {
                   </div>
                 )}
 
-                <IonButton
-                  type="submit"
-                  expand="block"
-                  shape="round"
-                  disabled={isLoading}
-                  style={{
-                    '--background': '#16a34a',
-                    '--background-activated': '#15803d',
-                    marginBottom: '0.75rem',
-                  }}
-                >
-                  {isLoading ? 'Signing In...' : 'Sign In'}
-                </IonButton>
+                <div style={{ 
+                  textAlign: 'center',
+                  width: '100%',
+                  marginBottom: '0.75rem' 
+                }}>
+                  <IonButton
+                    type="submit"
+                    shape="round"
+                    disabled={isLoading}
+                    style={{
+                      '--background': '#16a34a',
+                      '--background-activated': '#15803d',
+                      display: 'inline-block',
+                      width: 'auto',
+                      padding: '0 2rem',
+                    }}
+                  >
+                    {isLoading ? 'Signing In...' : 'Sign In'}
+                  </IonButton>
+                </div>
 
                 <IonButton
                   expand="block"
                   shape="round"
                   fill="clear"
-                  style={{ '--color': '#16a34a' }}
+                  style={{ '--color': '#22c55e' }}
                   onClick={() => history.push('/signup')}
                 >
                   Create an account

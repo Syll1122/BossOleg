@@ -9,6 +9,7 @@ import {
   IonPopover,
   IonList,
   IonItem,
+  IonLabel,
 } from '@ionic/react';
 import { menuOutline, personCircleOutline } from 'ionicons/icons';
 import * as L from 'leaflet';
@@ -18,6 +19,7 @@ import { logout, getCurrentUserId } from '../../utils/auth';
 import { databaseService } from '../../services/database';
 import NotificationBell from '../../components/NotificationBell';
 import { requestGeolocation, getGeolocationErrorMessage, isSecureContext } from '../../utils/geolocation';
+import RefreshButton from '../../components/RefreshButton';
 import { isValidCoordinate } from '../../utils/coordinates';
 import { supabase } from '../../services/supabase';
 
@@ -55,6 +57,28 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [dayLocations, setDayLocations] = useState<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>([]);
   // Temporary storage organized by day: Map<day, Array<locations>>
   const [tempStorage, setTempStorage] = useState<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>>(new Map());
+  
+  // Use refs to persist selectedDay and dayLocations across renders (especially for mobile React batching issues)
+  const selectedDayRef = useRef<string | null>(null);
+  const dayLocationsRef = useRef<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>([]);
+  const tempStorageRef = useRef<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>>(new Map());
+  
+  // Sync refs with state to ensure persistence on mobile
+  // Always update refs regardless of value to prevent clearing on mobile re-renders
+  useEffect(() => {
+    // Only update refs if state has a value (don't overwrite with null/empty unless explicitly cleared)
+    // This ensures refs persist even if state temporarily becomes null during re-renders
+    if (selectedDay !== null && selectedDay !== undefined) {
+      selectedDayRef.current = selectedDay;
+    }
+    // Only update if we have locations - preserve previous ref value if state is temporarily empty
+    if (dayLocations.length > 0) {
+      dayLocationsRef.current = dayLocations;
+    }
+    // Always sync tempStorage ref to keep it current
+    tempStorageRef.current = tempStorage;
+  }, [selectedDay, dayLocations, tempStorage]);
+  
   const history = useHistory();
 
   const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
@@ -251,6 +275,68 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       });
     }
   }, [hasStoppedCollecting, schedules, selectedDayFromStack, dayLocationsFromStack]);
+
+  // Refresh function - reloads all data except tempStorage
+  const handleRefresh = async () => {
+    try {
+      await databaseService.init();
+      
+      // Get collector name and truck number
+      const userId = getCurrentUserId();
+      if (userId) {
+        const account = await databaseService.getAccountById(userId);
+        if (account) {
+          if (account.name) {
+            setCollectorName(account.name);
+          }
+          if (account.truckNo) {
+            setTruckNo(account.truckNo);
+            
+            // Check truck status using the account's truck number
+            const status = await databaseService.getTruckStatus(account.truckNo);
+            if (status) {
+              const isFull = status.isFull || false;
+              setTruckIsFull(isFull);
+            } else {
+              setTruckIsFull(false);
+            }
+          }
+
+          // Reload schedules for this collector (preserve tempStorage)
+          try {
+            const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+            setSchedules(collectorSchedules);
+            
+            // If a day is selected, reload locations for that day but preserve tempStorage
+            if (selectedDay) {
+              const daySchedules = getSchedulesForDay(selectedDay);
+              if (daySchedules.length > 0) {
+                const allLocations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+                daySchedules.forEach(schedule => {
+                  const locations = extractLocationsFromSchedule(schedule);
+                  allLocations.push(...locations);
+                });
+                
+                // Only update tempStorage if it doesn't have this day (preserve done removals)
+                setTempStorage(prev => {
+                  const newMap = new Map(prev);
+                  if (!newMap.has(selectedDay)) {
+                    newMap.set(selectedDay, allLocations);
+                    setDayLocations(allLocations);
+                  }
+                  return newMap;
+                });
+              }
+            }
+          } catch (error) {
+            console.error('Error loading schedules:', error);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing data:', error);
+    }
+  };
 
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
@@ -469,11 +555,16 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           const newMap = new Map(prev);
           // Always update temp storage with current locations (overwrite if exists)
           newMap.set(day, allLocations);
+          // Also update ref immediately for mobile compatibility
+          tempStorageRef.current = newMap;
           return newMap;
         });
         
         // Update dayLocations separately to ensure state update
         setDayLocations(allLocations);
+        // Also update refs immediately for mobile compatibility
+        dayLocationsRef.current = allLocations;
+        selectedDayRef.current = day;
         
         // Close the panel so locations show below Start Collecting button
         setShowSchedulePanel(false);
@@ -552,6 +643,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         // This prevents useEffect from trying to reload the removed day
         setSelectedDay(null);
         setDayLocations([]);
+        // Also explicitly clear refs when we intentionally clear state (all locations done)
+        selectedDayRef.current = null;
+        dayLocationsRef.current = [];
         
         // Remove from temp storage
         setTempStorage(prev => {
@@ -964,7 +1058,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     console.log(`Finished placing flags. Total locations processed: ${locations.length}`);
   };
 
-  const requestLocationAndStart = async () => {
+  const requestLocationAndStart = async (retryAttempt: number = 0, useHighAccuracy: boolean = false) => {
     // Check if we're on a secure context (HTTPS or localhost)
     if (!isSecureContext() && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
       setLocationErrorMessage(
@@ -1026,6 +1120,16 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       }
     }
 
+    // Progressive timeout and accuracy settings:
+    // - First attempt: Fast, use cached position, low accuracy (5s timeout)
+    // - Second attempt: Medium timeout, allow cached, medium accuracy (15s timeout)
+    // - Third attempt: Long timeout, fresh position, high accuracy (25s timeout)
+    const timeoutValues = [5000, 15000, 25000];
+    const maximumAgeValues = [30000, 10000, 0]; // Allow older cached positions on first attempts
+    const currentTimeout = timeoutValues[Math.min(retryAttempt, timeoutValues.length - 1)];
+    const currentMaximumAge = maximumAgeValues[Math.min(retryAttempt, maximumAgeValues.length - 1)];
+    const currentHighAccuracy = retryAttempt >= 1 || useHighAccuracy;
+
     requestGeolocation(
       (pos) => {
         const { latitude, longitude } = pos.coords;
@@ -1038,14 +1142,32 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         onStartCollecting(location, selectedDay, dayLocations.length > 0 ? dayLocations : (tempStorage.get(selectedDay || '') || []));
       },
       (error) => {
+        // Auto-retry up to 2 times with progressive settings
+        if (retryAttempt < 2 && error instanceof GeolocationPositionError && error.code === error.TIMEOUT) {
+          console.log(`Location request timed out, retrying (attempt ${retryAttempt + 1}/2)...`);
+          setTimeout(() => {
+            requestLocationAndStart(retryAttempt + 1, true);
+          }, 1000); // Wait 1 second before retry
+          return;
+        }
+
+        // Show error after all retries exhausted or for other errors
         if (error instanceof GeolocationPositionError) {
-          setLocationErrorMessage(getGeolocationErrorMessage(error));
+          let errorMsg = getGeolocationErrorMessage(error);
+          if (error.code === error.TIMEOUT) {
+            errorMsg += '\n\nTip: Make sure you are outdoors or near a window for better GPS signal.';
+          }
+          setLocationErrorMessage(errorMsg);
         } else {
           setLocationErrorMessage(error.message || 'Failed to get location. Please try again.');
         }
         setShowLocationError(true);
       },
-      { enableHighAccuracy: true, timeout: 8000 }
+      { 
+        enableHighAccuracy: currentHighAccuracy, 
+        timeout: currentTimeout,
+        maximumAge: currentMaximumAge
+      }
     );
   };
 
@@ -1058,7 +1180,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           style={{
             position: 'relative',
             height: '100%',
-            background: '#ecfdf3',
+            background: '#0a0a0a',
           }}
         >
           {/* Map section */}
@@ -1099,29 +1221,32 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 gap: '0.5rem',
                 padding: '0.3rem 0.75rem',
                 borderRadius: 999,
-                backgroundColor: 'rgba(255,255,255,0.9)',
-                boxShadow: '0 6px 14px rgba(15,23,42,0.18)',
+                backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                border: '1px solid #2a2a2a',
+                boxShadow: '0 6px 14px rgba(0, 0, 0, 0.5)',
               }}
             >
-              <IonIcon icon={personCircleOutline} style={{ fontSize: '1.4rem', color: '#4b286d' }} />
-              <span style={{ fontSize: '0.85rem', fontWeight: 600 }}>{collectorName}</span>
+              <IonIcon icon={personCircleOutline} style={{ fontSize: '1.6rem', color: '#22c55e' }} />
+              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{collectorName}</span>
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <RefreshButton onRefresh={handleRefresh} variant="header" />
               <NotificationBell />
               <IonButton
                 fill="clear"
                 style={{
-                  '--color': '#1f2933',
-                  backgroundColor: 'rgba(255,255,255,0.9)',
+                  '--color': '#ffffff',
+                  backgroundColor: 'rgba(26, 26, 26, 0.95)',
+                  border: '1px solid #2a2a2a',
                   borderRadius: 999,
-                  minWidth: 42,
-                  height: 42,
-                  boxShadow: '0 6px 14px rgba(15,23,42,0.18)',
+                  minWidth: 48,
+                  height: 48,
+                  boxShadow: '0 6px 14px rgba(0, 0, 0, 0.5)',
                 }}
                 onClick={(e) => setMenuEvent(e.nativeEvent)}
               >
-                <IonIcon icon={menuOutline} />
+                <IonIcon icon={menuOutline} style={{ fontSize: '1.75rem' }} />
               </IonButton>
             </div>
           </div>
@@ -1137,8 +1262,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               padding: '1.25rem 1rem 1.5rem',
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
-              background: '#f3f4fb',
-              boxShadow: '0 -14px 32px rgba(15,23,42,0.16)',
+              background: '#141414',
+              border: '1px solid #2a2a2a',
+              borderBottom: 'none',
+              boxShadow: '0 -14px 32px rgba(0, 0, 0, 0.6)',
               zIndex: 1,
             }}
           >
@@ -1148,21 +1275,50 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 flexDirection: 'column',
                 gap: '0.75rem',
                 marginBottom: '0.75rem',
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+              justifyContent: 'space-between',
+                alignItems: 'center',
+                  position: 'relative',
+                marginBottom: truckIsFull ? '1.5rem' : '0',
               }}
             >
-              <div
-                style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  position: 'relative',
-                }}
-              >
-                <button
-                  type="button"
+              {/* Status Badge - Positioned above the button container */}
+              {truckIsFull && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: '-40px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    padding: '0.5rem 1rem',
+                    borderRadius: 8,
+                    background: '#dc2626',
+                    color: '#ffffff',
+                    fontSize: '0.8rem',
+                    fontWeight: 700,
+                    boxShadow: '0 4px 12px rgba(220, 38, 38, 0.5)',
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    pointerEvents: 'none',
+                    zIndex: 1000,
+                    border: '2px solid #ffffff',
+                    letterSpacing: '0.5px',
+                  }}
+                >
+                  FULL
+                </div>
+              )}
+              
+              <button
+                type="button"
                   disabled={!truckIsFull && !selectedDay}
-                  onClick={() => {
-                    if (truckIsFull) {
+                onClick={() => {
+                  if (truckIsFull) {
                       // Continue collecting - auto-place flags for selected day
                       const continueLocations = tempStorage.get(selectedDay || '') || dayLocations;
                       if (selectedDay && continueLocations.length > 0) {
@@ -1176,8 +1332,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                       // The route page will also set isFull = false in the database
                       // Pass selected day and locations so route page can place flags
                       onStartCollecting(undefined, selectedDay, continueLocations);
-                    } else {
-                      // Start collecting - show location prompt first
+                  } else {
+                    // Start collecting - show location prompt first
                       // Only proceed if a day is selected
                       if (!selectedDay) {
                         return;
@@ -1205,25 +1361,25 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                         console.log('Cannot place flags - selectedDay:', selectedDay, 'locations:', currentLocations);
                       }
                       
-                      setShowLocationPrompt(true);
-                    }
-                  }}
-                  style={{
-                    display: 'inline-flex',
-                    alignItems: 'center',
-                    gap: '0.5rem',
-                    padding: '0.75rem 1.4rem',
-                    borderRadius: 999,
-                    border: 'none',
+                    setShowLocationPrompt(true);
+                  }
+                }}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: '0.5rem',
+                  padding: '0.75rem 1.4rem',
+                  borderRadius: 999,
+                  border: 'none',
                     background: (!truckIsFull && !selectedDay)
                       ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 50%, #4b5563 100%)'
-                      : 'linear-gradient(135deg, #16a34a 0%, #22c55e 50%, #4ade80 100%)',
-                    color: '#ecfdf3',
-                    fontWeight: 700,
-                    fontSize: '0.82rem',
+                      : 'linear-gradient(135deg, #22c55e 0%, #4ade80 50%, #22c55e 100%)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
                     boxShadow: (!truckIsFull && !selectedDay)
                       ? '0 8px 16px rgba(107, 114, 128, 0.3)'
-                      : '0 12px 26px rgba(22, 163, 74, 0.6)',
+                      : '0 12px 26px rgba(34, 197, 94, 0.6), 0 0 20px rgba(34, 197, 94, 0.3)',
                     whiteSpace: 'nowrap',
                     width: 'fit-content',
                     cursor: (!truckIsFull && !selectedDay) ? 'not-allowed' : 'pointer',
@@ -1231,58 +1387,43 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     zIndex: 10,
                     position: 'relative',
                     opacity: (!truckIsFull && !selectedDay) ? 0.6 : 1,
+                }}
+              >
+                <span
+                  style={{
+                    width: 24,
+                    height: 24,
+                    borderRadius: '999px',
+                    backgroundColor: 'rgba(34, 197, 94, 0.3)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '0.95rem',
                   }}
                 >
-                  <span
-                    style={{
-                      width: 24,
-                      height: 24,
-                      borderRadius: '999px',
-                      backgroundColor: 'rgba(22, 163, 74, 0.2)',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      fontSize: '0.95rem',
-                    }}
-                  >
-                    ▶
-                  </span>
-                    {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
-                </button>
-
-                {/* Status Badge - Centered horizontally, aligned vertically with button */}
-                {truckIsFull && (
-                  <div
-                    style={{
-                      position: 'absolute',
-                      left: '50%',
-                      transform: 'translateX(-50%)',
-                      padding: '0.4rem 0.75rem',
-                      borderRadius: 8,
-                      background: '#fee2e2',
-                      color: '#dc2626',
-                      fontSize: '0.75rem',
-                      fontWeight: 600,
-                      boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
-                      whiteSpace: 'nowrap',
-                      display: 'flex',
-                      alignItems: 'center',
-                      pointerEvents: 'none', // Don't block clicks
-                      zIndex: 1,
-                    }}
-                  >
-                    Status: Full
-                  </div>
-                )}
+                  ▶
+                </span>
+                {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
+              </button>
 
                 <div style={{ textAlign: 'right', marginLeft: '1rem' }}>
-                  <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Truck No:</div>
-                  <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{truckNo}</div>
-                </div>
+                <div style={{ fontSize: '0.7rem', color: '#b0b0b0' }}>Truck No:</div>
+                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{truckNo}</div>
               </div>
+            </div>
 
               {/* Location Buttons - Show all locations for selected day from temp storage */}
-              {selectedDay && (tempStorage.get(selectedDay) || dayLocations).length > 0 && (
+              {/* Always check refs first for mobile compatibility - render independently of panel state */}
+              {(() => {
+                // Always prioritize refs on mobile for immediate state access
+                const currentDay = selectedDayRef.current || selectedDay;
+                const currentLocations = tempStorageRef.current.get(currentDay || '') || tempStorage.get(currentDay || '') || dayLocationsRef.current || dayLocations;
+                
+                if (!currentDay || !currentLocations || currentLocations.length === 0) {
+                  return null;
+                }
+                
+                return (
                 <div
                   style={{
                     marginTop: '0.75rem',
@@ -1291,10 +1432,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     gap: '0.5rem',
                   }}
                 >
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>
-                    Locations for {selectedDay}:
-                  </div>
-                  {(tempStorage.get(selectedDay) || dayLocations).map((location, index) => {
+                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0', marginBottom: '0.25rem' }}>
+                    Locations for {currentDay}:
+            </div>
+                  {currentLocations.map((location, index) => {
                     const displayText = location.street 
                       ? `${location.street} / ${location.barangay}` 
                       : location.barangay;
@@ -1308,16 +1449,16 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                           alignItems: 'center',
                         }}
                       >
-                        <button
-                          type="button"
+                <button
+                  type="button"
                           onClick={() => handleLocationSelect(location)}
                           style={{
                             flex: 1,
                             padding: '0.75rem 1rem',
                             borderRadius: 12,
-                            border: '2px solid #6366f1',
-                            background: 'white',
-                            color: '#6366f1',
+                            border: '2px solid #3b82f6',
+                            background: '#242424',
+                            color: '#3b82f6',
                             fontWeight: 600,
                             fontSize: '0.875rem',
                             cursor: 'pointer',
@@ -1326,16 +1467,16 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                             boxShadow: '0 2px 4px rgba(99, 102, 241, 0.1)',
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#6366f1';
+                            e.currentTarget.style.background = '#3b82f6';
                             e.currentTarget.style.color = '#ffffff';
                             e.currentTarget.style.transform = 'scale(1.02)';
-                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(99, 102, 241, 0.3)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.3)';
                           }}
                           onMouseLeave={(e) => {
-                            e.currentTarget.style.background = 'white';
-                            e.currentTarget.style.color = '#6366f1';
+                            e.currentTarget.style.background = '#242424';
+                            e.currentTarget.style.color = '#3b82f6';
                             e.currentTarget.style.transform = 'scale(1)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(99, 102, 241, 0.1)';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.2)';
                           }}
                         >
                           {displayText}
@@ -1359,7 +1500,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                               boxShadow: '0 2px 4px rgba(34, 197, 94, 0.3)',
                             }}
                             onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#16a34a';
+                              e.currentTarget.style.background = '#15803d';
                               e.currentTarget.style.borderColor = '#16a34a';
                               e.currentTarget.style.transform = 'scale(1.05)';
                               e.currentTarget.style.boxShadow = '0 4px 8px rgba(34, 197, 94, 0.4)';
@@ -1378,7 +1519,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     );
                   })}
                 </div>
-              )}
+                );
+              })()}
 
               {/* Schedule Location Display */}
               {selectedSchedule && (!selectedDay || dayLocations.length === 0) && (
@@ -1388,25 +1530,29 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     marginTop: '0.75rem',
                     padding: '0.75rem 1rem',
                     borderRadius: 12,
-                    background: 'white',
-                    border: '2px solid #6366f1',
+                    background: '#242424',
+                    border: '2px solid #3b82f6',
                     cursor: 'pointer',
                     transition: 'all 0.2s ease',
-                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.2)',
+                    boxShadow: '0 2px 8px rgba(59, 130, 246, 0.3)',
                   }}
                   onMouseEnter={(e) => {
-                    e.currentTarget.style.background = '#f0f4ff';
+                    e.currentTarget.style.background = '#2a2a2a';
+                    e.currentTarget.style.borderColor = '#3b82f6';
                     e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.5)';
                   }}
                   onMouseLeave={(e) => {
-                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.background = '#242424';
+                    e.currentTarget.style.borderColor = '#3b82f6';
                     e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 2px 8px rgba(59, 130, 246, 0.3)';
                   }}
                 >
-                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0', marginBottom: '0.25rem' }}>
                     Collection Location:
                   </div>
-                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1f2937' }}>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffffff' }}>
                     {(() => {
                       const streetName = Array.isArray(selectedSchedule.street_name) 
                         ? selectedSchedule.street_name[0] 
@@ -1417,7 +1563,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                       return streetName ? `${streetName} / ${barangayName}` : barangayName || 'Location';
                     })()}
                   </div>
-                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#808080', marginTop: '0.25rem' }}>
                     Click to drop flag on map
                   </div>
                 </div>
@@ -1426,42 +1572,42 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               <button
                 type="button"
                 onClick={() => setShowSchedulePanel(!showSchedulePanel)}
-                style={{
+                  style={{
                   display: 'inline-flex',
                   alignItems: 'center',
                   justifyContent: 'center',
                   padding: '0.75rem 1.2rem',
-                  borderRadius: 999,
-                  border: 'none',
+                    borderRadius: 999,
+                    border: 'none',
                   background: showSchedulePanel
-                    ? 'linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #818cf8 100%)'
-                    : 'linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #a5b4fc 100%)',
-                  color: '#ffffff',
+                    ? 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #3b82f6 100%)'
+                    : 'linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)',
+                    color: '#ffffff',
                   fontWeight: 700,
                   fontSize: '0.82rem',
                   boxShadow: showSchedulePanel
-                    ? '0 12px 26px rgba(79, 70, 229, 0.6)'
-                    : '0 8px 20px rgba(99, 102, 241, 0.4)',
+                    ? '0 12px 26px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)'
+                    : '0 8px 20px rgba(37, 99, 235, 0.5)',
                   transition: 'all 0.3s ease',
-                  cursor: 'pointer',
+                    cursor: 'pointer',
                   whiteSpace: 'nowrap',
                   width: 'fit-content',
-                }}
-                onMouseEnter={(e) => {
+                  }}
+                  onMouseEnter={(e) => {
                   if (!showSchedulePanel) {
                     e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(99, 102, 241, 0.5)';
+                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)';
                   }
-                }}
-                onMouseLeave={(e) => {
+                  }}
+                  onMouseLeave={(e) => {
                   if (!showSchedulePanel) {
                     e.currentTarget.style.transform = 'scale(1)';
                     e.currentTarget.style.boxShadow = '0 8px 20px rgba(99, 102, 241, 0.4)';
                   }
-                }}
-              >
+                  }}
+                >
                 📅 Schedule
-              </button>
+                </button>
             </div>
 
             {/* Schedule Panel */}
@@ -1478,14 +1624,18 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     background: 'rgba(0, 0, 0, 0.5)',
                     zIndex: 999,
                   }}
-                  onClick={() => {
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    e.preventDefault();
+                    // Just close the panel - don't touch any state
+                    // The refs will preserve selectedDay and dayLocations
+                    console.log('Backdrop clicked - preserving selectedDay:', selectedDayRef.current || selectedDay, 'dayLocations:', (dayLocationsRef.current || dayLocations).length);
                     setShowSchedulePanel(false);
-                    setSelectedDay(null);
-                    setDayLocations([]);
                   }}
                 />
                 {/* Panel */}
                 <div
+                  onClick={(e) => e.stopPropagation()}
                   style={{
                     position: 'fixed',
                     top: '50%',
@@ -1495,9 +1645,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     maxWidth: '400px',
                     padding: '1.25rem',
                     borderRadius: 16,
-                    background: 'white',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
-                    border: '1px solid #e5e7eb',
+                    background: '#1a1a1a',
+                    border: '1px solid #2a2a2a',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.8)',
                     zIndex: 1000,
                   }}
                 >
@@ -1513,7 +1663,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     style={{
                       fontSize: '1rem',
                       fontWeight: 700,
-                      color: '#1f2937',
+                      color: '#ffffff',
                       margin: 0,
                     }}
                   >
@@ -1521,16 +1671,19 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                   </h3>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.preventDefault();
+                      // Just close the panel - don't touch any state
+                      // The refs will preserve selectedDay and dayLocations
+                      console.log('Closing panel - preserving selectedDay:', selectedDayRef.current || selectedDay, 'dayLocations:', (dayLocationsRef.current || dayLocations).length);
                       setShowSchedulePanel(false);
-                      setSelectedDay(null);
-                      setDayLocations([]);
                     }}
                     style={{
                       background: 'none',
                       border: 'none',
                       fontSize: '1.5rem',
-                      color: '#6b7280',
+                      color: '#b0b0b0',
                       cursor: 'pointer',
                       padding: '0.25rem',
                       lineHeight: 1,
@@ -1577,18 +1730,18 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                             border: 'none',
                             background: isScheduled && !hasPendingLocations
                               ? isSelected
-                                ? 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)'
-                                : 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)'
-                              : '#e5e7eb',
-                            color: isScheduled && !hasPendingLocations ? '#ffffff' : '#9ca3af',
+                                ? 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)'
+                                : 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)'
+                              : '#3a3a3a',
+                            color: isScheduled && !hasPendingLocations ? '#ffffff' : '#808080',
                             fontWeight: 600,
                             fontSize: '0.875rem',
                             cursor: isScheduled && !hasPendingLocations ? 'pointer' : 'not-allowed',
                             transition: 'all 0.2s ease',
                             boxShadow: isScheduled && !hasPendingLocations
                               ? isSelected
-                                ? '0 4px 12px rgba(79, 70, 229, 0.3)'
-                                : '0 2px 8px rgba(22, 163, 74, 0.3)'
+                                ? '0 4px 12px rgba(59, 130, 246, 0.5), 0 0 15px rgba(59, 130, 246, 0.3)'
+                                : '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)'
                               : 'none',
                             transform: isSelected ? 'scale(1.02)' : 'scale(1)',
                             opacity: isScheduled && !hasPendingLocations ? 1 : 0.6,
@@ -1598,14 +1751,14 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                             if (isScheduled && !isSelected && !hasPendingLocations) {
                               e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)';
                               e.currentTarget.style.transform = 'scale(1.05)';
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(22, 163, 74, 0.4)';
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.5), 0 0 15px rgba(34, 197, 94, 0.3)';
                             }
                           }}
                           onMouseLeave={(e) => {
                             if (isScheduled && !isSelected && !hasPendingLocations) {
                               e.currentTarget.style.background = 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)';
                               e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)';
                             }
                           }}
                         >
@@ -1619,8 +1772,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                                 width: '8px',
                                 height: '8px',
                                 borderRadius: '50%',
-                                background: '#93c5fd',
-                                boxShadow: '0 0 8px rgba(147, 197, 253, 0.8), 0 0 12px rgba(147, 197, 253, 0.6), 0 1px 3px rgba(0,0,0,0.2)',
+                                background: '#22c55e',
+                                boxShadow: '0 0 8px rgba(34, 197, 94, 0.8), 0 0 12px rgba(34, 197, 94, 0.6), 0 1px 3px rgba(0,0,0,0.5)',
                               }}
                             />
                           )}
@@ -1658,7 +1811,19 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           onDidDismiss={() => setShowLocationError(false)}
           header="Location unavailable"
           message={locationErrorMessage || "We couldn't access your location. Please enable GPS / location permissions and try again."}
-          buttons={[{ text: 'OK', role: 'cancel' }]}
+          buttons={[
+            { text: 'Cancel', role: 'cancel' },
+            {
+              text: 'Retry',
+              handler: () => {
+                setShowLocationError(false);
+                // Wait a bit before retrying to ensure dialog is closed
+                setTimeout(() => {
+                  requestLocationAndStart(0, false);
+                }, 300);
+              }
+            }
+          ]}
         />
 
         {/* Top-right popover menu anchored to the menu icon */}

@@ -7,36 +7,43 @@ import { useHistory } from 'react-router-dom';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import { Report } from '../../models/types';
+import RefreshButton from '../../components/RefreshButton';
 
 const ReportsProgressPage: React.FC = () => {
   const history = useHistory();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const loadReports = async () => {
-      try {
-        await databaseService.init();
-        const userId = getCurrentUserId();
-        
-        if (!userId) {
-          setLoading(false);
-          return;
-        }
-
-        const userReports = await databaseService.getReportsByUserId(userId);
-        // Sort by createdAt (newest first)
-        userReports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        setReports(userReports);
-      } catch (error) {
-        console.error('Error loading reports:', error);
-      } finally {
+  const loadReports = async () => {
+    setLoading(true);
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      
+      if (!userId) {
         setLoading(false);
+        return;
       }
-    };
 
+      const userReports = await databaseService.getReportsByUserId(userId);
+      // Sort by createdAt (newest first)
+      userReports.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      setReports(userReports);
+    } catch (error) {
+      console.error('Error loading reports:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
     loadReports();
   }, []);
+
+  // Refresh function
+  const handleRefresh = async () => {
+    await loadReports();
+  };
 
   const getStatusColor = (status: Report['status']) => {
     switch (status) {
@@ -91,18 +98,27 @@ const ReportsProgressPage: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
+        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
           <IonButtons slot="start">
-            <IonButton onClick={() => history.goBack()}>
-              <IonIcon icon={arrowBackOutline} />
+            <IonButton 
+              onClick={() => history.goBack()}
+              style={{
+                minWidth: '48px',
+                height: '48px',
+              }}
+            >
+              <IonIcon icon={arrowBackOutline} style={{ fontSize: '1.75rem' }} />
             </IonButton>
           </IonButtons>
           <IonTitle>My Reports</IonTitle>
+          <IonButtons slot="end">
+            <RefreshButton onRefresh={handleRefresh} variant="header" />
+          </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#ecfdf3', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
           <div style={{ maxWidth: 600, margin: '0 auto' }}>
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>

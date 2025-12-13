@@ -8,6 +8,7 @@ import * as L from 'leaflet';
 import MapView from '../../components/MapView';
 import { databaseService } from '../../services/database';
 import NotificationBell from '../../components/NotificationBell';
+import RefreshButton from '../../components/RefreshButton';
 import { calculateDistance, isValidCoordinate } from '../../utils/coordinates';
 import { getCurrentUserId } from '../../utils/auth';
 import { requestGeolocation } from '../../utils/geolocation';
@@ -45,7 +46,7 @@ const ResidentTruckView: React.FC = () => {
       html: `
         <div style="display: flex; flex-direction: column; align-items: center;">
           <div style="font-size: 28px;">🚛</div>
-          <div style="background: ${isRed ? '#ef4444' : 'white'}; color: ${isRed ? 'white' : '#1f2937'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); white-space: nowrap;">
+          <div style="background: ${isRed ? '#ef4444' : '#1a1a1a'}; color: ${isRed ? 'white' : '#ffffff'}; padding: 2px 6px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.5); border: 1px solid ${isRed ? '#ef4444' : '#2a2a2a'}; white-space: nowrap;">
             ${truckNumber}
           </div>
         </div>
@@ -68,7 +69,7 @@ const ResidentTruckView: React.FC = () => {
           height: 40px;
           background: #3b82f6;
           border-radius: 50%;
-          border: 3px solid white;
+          border: 3px solid #22c55e;
           box-shadow: 0 2px 8px rgba(0,0,0,0.3);
         ">
           <div style="font-size: 24px; line-height: 1;">👤</div>
@@ -84,7 +85,8 @@ const ResidentTruckView: React.FC = () => {
   const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number, isOnline: boolean = true) => {
     const popupContent = document.createElement('div');
     popupContent.style.cssText = `
-      background: white;
+      background: #1a1a1a;
+      border: 1px solid #2a2a2a;
       border-radius: 12px;
       padding: 0;
       min-width: 220px;
@@ -798,26 +800,56 @@ const ResidentTruckView: React.FC = () => {
     };
   }, []);
 
+  // Refresh function - reload all trucks
+  const handleRefresh = async () => {
+    if (!mapRef.current) return;
+    
+    // Remove all existing truck markers
+    truckMarkersRef.current.forEach((marker) => {
+      if (mapRef.current) {
+        mapRef.current.removeLayer(marker);
+      }
+    });
+    truckMarkersRef.current.clear();
+    previousTruckStatusesRef.current.clear();
+    
+    // Reload all trucks by calling handleMapReady logic
+    await handleMapReady(mapRef.current);
+    
+    // Reload resident location
+    const userId = getCurrentUserId();
+    if (userId) {
+      await initializeResidentNotifications(userId);
+    }
+  };
+
   const AnyMapView = MapView as React.ComponentType<any>;
 
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
+        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
           <IonButtons slot="start">
-            <IonButton onClick={() => history.goBack()}>
-              <IonIcon icon={arrowBackOutline} />
+            <IonButton 
+              onClick={() => history.goBack()}
+              style={{
+                minWidth: '48px',
+                height: '48px',
+              }}
+            >
+              <IonIcon icon={arrowBackOutline} style={{ fontSize: '1.75rem' }} />
             </IonButton>
           </IonButtons>
           <IonTitle>Track Truck</IonTitle>
           <IonButtons slot="end">
+            <RefreshButton onRefresh={handleRefresh} variant="header" />
             <NotificationBell />
           </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ position: 'relative', height: '100%', background: '#ecfdf3' }}>
+        <div style={{ position: 'relative', height: '100%', background: '#0a0a0a' }}>
           {/* Map section - full screen */}
           <div
             style={{

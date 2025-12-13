@@ -7,6 +7,7 @@
     "dev": "vite",
     "dev:ngrok": "cross-env NGROK_URL=$NGROK_URL vite",
     "build": "tsc && vite build",
+    "sync:android": "npx cap sync android",
     "preview": "vite preview",
     "test.e2e": "cypress run",
     "test.unit": "vitest",
