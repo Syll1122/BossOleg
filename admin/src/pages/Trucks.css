@@ -1,0 +1,103 @@
+.trucks-page {
+  max-width: 100%;
+}
+
+.page-header p {
+  color: var(--text-light);
+  margin-top: 0.5rem;
+}
+
+.trucks-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  gap: 1.5rem;
+}
+
+.truck-card {
+  background: white;
+  border-radius: 0.5rem;
+  box-shadow: var(--shadow);
+  padding: 1.5rem;
+}
+
+.truck-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.truck-header h3 {
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.truck-badges {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.truck-info {
+  margin-bottom: 1.5rem;
+}
+
+.truck-location {
+  margin-bottom: 1rem;
+}
+
+.truck-location strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+.coordinates {
+  font-family: monospace;
+  font-size: 0.875rem;
+  color: var(--text-light);
+  margin-bottom: 0.5rem;
+}
+
+.map-link {
+  color: var(--primary);
+  text-decoration: none;
+  font-size: 0.875rem;
+}
+
+.map-link:hover {
+  text-decoration: underline;
+}
+
+.truck-meta {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  font-size: 0.875rem;
+}
+
+.truck-meta strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  color: var(--text);
+}
+
+.truck-meta div > div {
+  color: var(--text-light);
+}
+
+.truck-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--text-light);
+  grid-column: 1 / -1;
+}
+
+

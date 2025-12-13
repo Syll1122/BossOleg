@@ -64,6 +64,27 @@ const LoginPage: React.FC = () => {
       const account = await databaseService.authenticate(identifier.trim(), password);
 
       if (account) {
+        // Check if collector registration is approved
+        if (account.role === 'collector') {
+          const registrationStatus = (account as any).registrationStatus;
+          if (registrationStatus === 'pending') {
+            setAlertMessage('Your registration is pending approval. Please wait for admin approval before logging in.');
+            setShowAlert(true);
+            setIsLoading(false);
+            return;
+          } else if (registrationStatus === 'rejected') {
+            setAlertMessage('Your registration has been rejected. Please contact support for more information.');
+            setShowAlert(true);
+            setIsLoading(false);
+            return;
+          } else if (registrationStatus !== 'approved') {
+            setAlertMessage('Your registration is still being reviewed. Please wait for approval.');
+            setShowAlert(true);
+            setIsLoading(false);
+            return;
+          }
+        }
+
         // Delete any existing sessions for this account before creating a new one
         // This allows users to log in from a new device/browser even if an old session exists
         try {

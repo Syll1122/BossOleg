@@ -32,6 +32,10 @@ class SupabaseDatabaseService {
       id: this.generateId(),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
+      // Set registrationStatus for collectors (pending by default, approved for others)
+      registrationStatus: account.role === 'collector' 
+        ? (account.registrationStatus || 'pending')
+        : 'approved',
     };
 
     // Check if email already exists
@@ -947,6 +951,50 @@ class SupabaseDatabaseService {
       throw new Error(error.message);
     }
   }
+
+  // ========== COLLECTION SCHEDULES METHODS ==========
+
+  /**
+   * Get collection schedules for a specific collector
+   */
+  async getSchedulesByCollectorId(collectorId: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*')
+      .eq('collector_id', collectorId);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get collection schedules for today's day of week
+   */
+  async getTodaySchedulesByCollectorId(collectorId: string): Promise<any[]> {
+    const today = new Date();
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    const todayDayName = dayNames[today.getDay()];
+
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*')
+      .eq('collector_id', collectorId)
+      .contains('days', [todayDayName]);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Remove a location from a collection schedule by removing the item at the specified index
+   * from street_name, barangay_name, latitude, and longitude arrays
+   */
 }
 
 // Export singleton instance

@@ -21,6 +21,10 @@ export interface Account {
   phoneNumber?: string; // Profile field
   createdAt: string;
   updatedAt: string;
+  isOnline?: boolean; // Whether the user is currently online
+  lastLoginAt?: string;
+  lastLogoutAt?: string;
+  registrationStatus?: 'pending' | 'approved' | 'rejected';
 }
 
 export interface Report {

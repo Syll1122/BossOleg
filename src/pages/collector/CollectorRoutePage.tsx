@@ -8,7 +8,6 @@ import { busOutline, searchOutline } from 'ionicons/icons';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import { isSecureContext, getGeolocationErrorMessage } from '../../utils/geolocation';
-import { getTruckNumberByLocation } from '../../utils/truckAssignment';
 
 interface TruckLocation {
   truckId: string;
@@ -24,7 +23,7 @@ interface ScheduleLocation {
 }
 
 interface CollectorRoutePageProps {
-  onBack?: () => void;
+  onBack?: (stoppedCollecting?: boolean) => void;
   selectedLocation?: ScheduleLocation;
 }
 
@@ -42,7 +41,7 @@ const isValidCoordinate = (lat: number, lng: number): boolean => {
   );
 };
 
-const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selectedLocation }) => {
+const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selectedLocation, selectedDay, dayLocations = [] }) => {
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkerRef = useRef<L.Marker | null>(null);
   const searchMarkerRef = useRef<L.Marker | null>(null);
@@ -54,6 +53,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const otherTrucksRef = useRef<Map<string, L.Marker>>(new Map());
   const watchIdRef = useRef<number | null>(null);
   const isCollectingRef = useRef<boolean>(true); // Track if currently collecting to prevent GPS updates after stopping
+  const scheduleFlagRef = useRef<L.Marker | null>(null);
 
   // Load truck number from account
   useEffect(() => {
@@ -99,6 +99,11 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             currentStatus?.longitude
           );
           console.log(`Truck ${truckNo} set as collecting (isFull = false, isCollecting = true)`);
+          
+          // Update truck marker icon to green (original color) immediately
+          if (truckMarkerRef.current) {
+            truckMarkerRef.current.setIcon(createTruckIcon(false, truckNo));
+          }
           
           // Notify all residents that collection has started
           const { notifyAllResidentsCollectionStarted } = await import('../../services/residentNotificationService');
@@ -239,13 +244,6 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     return popupContent;
   };
 
-  const stopIcon = L.divIcon({
-    html: '🚩',
-    className: 'watch-stop-icon',
-    iconSize: [28, 28],
-    iconAnchor: [14, 28],
-  });
-
   const searchFlagIcon = L.divIcon({
     html: '📍',
     className: 'watch-stop-icon',
@@ -296,33 +294,169 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     setTimeout(() => {
       if (!mapRef.current) return;
 
-      // Updated coordinates for collection stops
-      const donPedro: L.LatLngExpression = [14.682042, 121.076975];
-      const donPrimitivo: L.LatLngExpression = [14.680823, 121.076206];
-      const donElpidio: L.LatLngExpression = [14.679855, 121.077793];
+      // Auto-place Monday flags
+      const placeMondayFlags = async () => {
+        try {
+          await databaseService.init();
+          const userId = getCurrentUserId();
+          if (!userId) return;
 
-      const stops: L.LatLngExpression[] = [donPedro, donPrimitivo, donElpidio];
-      
-      // Add labels to markers
-      const stopLabels = ['Don Pedro', 'Don Primitivo', 'Don Elpidio'];
+          // Get all schedules for this collector
+          const allSchedules = await databaseService.getSchedulesByCollectorId(userId);
+          
+          // Filter for Monday schedules
+          const mondaySchedules = allSchedules.filter(schedule => 
+            schedule.days && Array.isArray(schedule.days) && schedule.days.includes('Mon')
+          );
 
-      // Add simple flag markers for each stop with labels
-      stops.forEach((pos, index) => {
-        const marker = L.marker(pos, { icon: stopIcon }).addTo(mapRef.current!);
-        marker.bindPopup(`<div style="text-align: center; font-weight: 600;">${stopLabels[index]}</div>`);
-      });
+          if (mondaySchedules.length === 0) return;
+
+          // Create red flag icon
+          const flagIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+          });
+
+          // Extract and place all Monday locations
+          mondaySchedules.forEach(schedule => {
+            // Handle arrays for latitude/longitude/names
+            const latitudes = Array.isArray(schedule.latitude) ? schedule.latitude : (schedule.latitude !== null && schedule.latitude !== undefined ? [schedule.latitude] : []);
+            const longitudes = Array.isArray(schedule.longitude) ? schedule.longitude : (schedule.longitude !== null && schedule.longitude !== undefined ? [schedule.longitude] : []);
+            const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : (schedule.street_name ? [schedule.street_name] : []);
+            const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : (schedule.barangay_name ? [schedule.barangay_name] : []);
+
+            const maxLength = Math.max(latitudes.length, longitudes.length, streetNames.length, barangayNames.length, 1);
+
+            for (let i = 0; i < maxLength; i++) {
+              const lat = latitudes[i] !== null && latitudes[i] !== undefined ? Number(latitudes[i]) : (latitudes[0] !== null && latitudes[0] !== undefined ? Number(latitudes[0]) : null);
+              const lng = longitudes[i] !== null && longitudes[i] !== undefined ? Number(longitudes[i]) : (longitudes[0] !== null && longitudes[0] !== undefined ? Number(longitudes[0]) : null);
+              const street = streetNames[i] || streetNames[0] || '';
+              const barangay = barangayNames[i] || barangayNames[0] || '';
+
+              if (lat !== null && !isNaN(lat) && lng !== null && !isNaN(lng)) {
+                const locationKey = `monday-${lat}-${lng}-${street}-${barangay}`;
+                const displayText = street ? `${street} / ${barangay}` : barangay;
+
+                // Check if marker already exists
+                let markerExists = false;
+                mapRef.current!.eachLayer((layer) => {
+                  if (layer instanceof L.Marker) {
+                    const markerPos = layer.getLatLng();
+                    if (Math.abs(markerPos.lat - lat) < 0.0001 && Math.abs(markerPos.lng - lng) < 0.0001) {
+                      markerExists = true;
+                    }
+                  }
+                });
+
+                if (!markerExists) {
+                  const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current!);
+                  
+                  // Create popup with cancel button
+                  const popupContent = `
+                    <div style="text-align: center;">
+                      <strong>Collection Start Point</strong><br/>
+                      ${displayText}<br/>
+                      <button id="remove-flag-route-${locationKey}" style="
+                        margin-top: 0.5rem;
+                        padding: 0.375rem 0.75rem;
+                        background: #dc2626;
+                        color: white;
+                        border: none;
+                        border-radius: 0.375rem;
+                        cursor: pointer;
+                        font-size: 0.875rem;
+                        font-weight: 600;
+                      ">Remove</button>
+                    </div>
+                  `;
+                  marker.bindPopup(popupContent); // Don't auto-open popup
+
+                  // Add click handler for cancel button
+                  marker.on('popupopen', () => {
+                    const removeButton = document.getElementById(`remove-flag-route-${locationKey}`);
+                    if (removeButton) {
+                      removeButton.onclick = () => {
+                        if (mapRef.current && mapRef.current.hasLayer(marker)) {
+                          mapRef.current.removeLayer(marker);
+                        }
+                        marker.closePopup();
+                      };
+                    }
+                  });
+
+                  // Store in scheduleFlagRef if it's the first one (for backward compatibility)
+                  if (!scheduleFlagRef.current) {
+                    scheduleFlagRef.current = marker;
+                  }
+                }
+              }
+            }
+          });
+        } catch (error) {
+          console.error('Error placing Monday flags:', error);
+        }
+      };
+
+      placeMondayFlags();
 
       // Add flag for selected location from schedule if provided
       if (selectedLocation) {
+        // Create red flag icon for schedule location
+        const flagIcon = L.icon({
+          iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+          shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+          iconSize: [25, 41],
+          iconAnchor: [12, 41],
+          popupAnchor: [1, -34],
+          shadowSize: [41, 41]
+        });
+
         const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
-        const marker = L.marker(selectedPos, { icon: searchFlagIcon }).addTo(mapRef.current!);
-        marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${selectedLocation.name}</div>`);
-        marker.openPopup();
+        const marker = L.marker(selectedPos, { icon: flagIcon }).addTo(mapRef.current!);
+        
+        // Create popup with cancel button
+        const popupContent = `
+          <div style="text-align: center;">
+            <strong>Collection Start Point</strong><br/>
+            ${selectedLocation.name || ''}<br/>
+            <button id="remove-flag-selected-mapready" style="
+              margin-top: 0.5rem;
+              padding: 0.375rem 0.75rem;
+              background: #dc2626;
+              color: white;
+              border: none;
+              border-radius: 0.375rem;
+              cursor: pointer;
+              font-size: 0.875rem;
+              font-weight: 600;
+            ">Remove</button>
+          </div>
+        `;
+            marker.bindPopup(popupContent); // Don't auto-open popup
+        
+        // Add click handler for cancel button
+        marker.on('popupopen', () => {
+          const removeButton = document.getElementById('remove-flag-selected-mapready');
+          if (removeButton) {
+            removeButton.onclick = () => {
+              if (mapRef.current && mapRef.current.hasLayer(marker)) {
+                mapRef.current.removeLayer(marker);
+              }
+              marker.closePopup();
+            };
+          }
+        });
+        
+        scheduleFlagRef.current = marker;
         // Center map on selected location
         mapRef.current.setView(selectedPos, 17);
       }
 
-      // Load and display all other collector trucks on the map
+      // Load and display only online (currently collecting) collector trucks on the map
       const loadAllTrucks = async () => {
         try {
           const userId = getCurrentUserId();
@@ -345,12 +479,28 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             // Only show trucks that have valid accounts with truck numbers AND exclude current user by ID
             if (collector.id && collector.truckNo && collector.truckNo.trim() !== '' && 
                 collector.id !== userId && collector.truckNo !== currentTruckNo) {
+              
+              // Check if collector is online from accounts table
+              const isOnline = collector.isOnline === true;
+              
               // Get truck status
               const status = await databaseService.getTruckStatus(collector.truckNo);
+              
+              // Only show trucks that are both online AND currently collecting
+              if (!isOnline) {
+                console.log(`Skipping truck ${collector.truckNo} - collector not online`);
+                continue;
+              }
+              
+              if (!status || !status.isCollecting) {
+                console.log(`Skipping truck ${collector.truckNo} - not currently collecting`);
+                continue;
+              }
+              
               const isFull = status?.isFull || false;
               
               // Use GPS coordinates from truck_status if available, otherwise skip this truck
-              if (!status || status.latitude === undefined || status.longitude === undefined) {
+              if (status.latitude === undefined || status.longitude === undefined) {
                 console.log(`Skipping truck ${collector.truckNo} - no GPS coordinates available`);
                 continue;
               }
@@ -496,8 +646,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             }
 
             // Create truck marker at last known position
+            // Use isFull = false since we just set the truck as collecting
             if (!truckMarkerRef.current || !mapRef.current.hasLayer(truckMarkerRef.current)) {
-              const icon = createTruckIcon(status.isFull || false, currentTruckNo);
+              const icon = createTruckIcon(false, currentTruckNo); // Always green when collecting
               const marker = L.marker(latlng, { icon }).addTo(mapRef.current);
               truckMarkerRef.current = marker;
               
@@ -613,6 +764,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           // Update existing marker position instead of creating new one
           marker = truckMarkerRef.current;
           marker.setLatLng(latlng);
+          // Update icon to green (original color) since we're collecting and isFull is false
+          marker.setIcon(createTruckIcon(false, currentTruckNo));
           
           // Update popup with new coordinates
           const popupContent = createTruckInfoPopup(currentTruckNo, lat, lng);
@@ -667,65 +820,12 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             const lat = pos.coords.latitude;
             const lng = pos.coords.longitude;
             
-            // Determine truck number based on current location
-            const locationBasedTruckNo = getTruckNumberByLocation(lat, lng);
+            // Use truck number from account (no predefined location-based assignment)
             let currentTruckNo = truckNo;
-            
-            // If location-based truck number is found and different from account, update it
-            if (locationBasedTruckNo && locationBasedTruckNo !== truckNo) {
-              try {
-                const userId = getCurrentUserId();
-                if (userId) {
-                  // Update account with location-based truck number
-                  await databaseService.updateAccount(userId, { truckNo: locationBasedTruckNo });
-                  setTruckNo(locationBasedTruckNo);
-                  currentTruckNo = locationBasedTruckNo;
-                  console.log(`Truck number updated to ${locationBasedTruckNo} based on location (${lat}, ${lng})`);
-                }
-              } catch (error) {
-                console.error('Error updating truck number based on location:', error);
-                // Continue with existing truck number if update fails
-              }
-            }
             
             if (!isValidCoordinate(lat, lng)) {
               console.error('Invalid GPS coordinates from getCurrentPosition');
-              // Fallback to first stop
-              if (!mapRef.current) return;
-              mapRef.current.setView(donPedro, 16);
-              // Remove any existing marker first
-              if (truckMarkerRef.current) {
-                try {
-                  if (mapRef.current && mapRef.current.hasLayer(truckMarkerRef.current)) {
-                    mapRef.current.removeLayer(truckMarkerRef.current);
-                  }
-                  truckMarkerRef.current.remove();
-                } catch (e) {
-                  // Marker might already be removed
-                }
-                truckMarkerRef.current = null;
-              }
-              
-              const currentTruckNo = truckNo;
-              if (currentTruckNo) {
-                const icon = createTruckIcon(false, currentTruckNo);
-                const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-                truckMarkerRef.current = marker;
-                const popupContent = createTruckInfoPopup(currentTruckNo);
-                marker.bindPopup(popupContent, {
-                  className: 'custom-truck-popup',
-                  closeButton: false,
-                });
-                marker.on('popupopen', () => {
-                  const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
-                  if (closeBtn) {
-                    closeBtn.onclick = () => {
-                      marker.closePopup();
-                    };
-                  }
-                });
-              }
-              mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
+              // Don't place truck if GPS is invalid - wait for valid GPS
               return;
             }
             
@@ -776,13 +876,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             // Center map on truck location
             if (!selectedLocation) {
               mapRef.current.setView(latlng, 16);
-              // Fit bounds to show both truck location and all stops
-              const allPoints = [latlng, ...stops];
-              mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
             } else {
-              // Fit bounds to show truck, selected location, and all stops
+              // Fit bounds to show truck and selected location
               const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
-              const allPoints = [latlng, selectedPos, ...stops];
+              const allPoints = [latlng, selectedPos];
               mapRef.current.fitBounds(L.latLngBounds(allPoints), { padding: [48, 48] });
             }
 
@@ -815,7 +912,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             );
           },
           (error) => {
-            // If GPS fails, place truck at first stop
+            // If GPS fails, don't place truck at predefined location
             console.error('GPS error:', error);
             
             // Log helpful error message
@@ -827,82 +924,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               console.warn('GPS Error:', getGeolocationErrorMessage(error));
             }
             
-            if (!mapRef.current) return;
-            
-            // Remove any existing marker first
-            if (truckMarkerRef.current) {
-              try {
-                if (mapRef.current.hasLayer(truckMarkerRef.current)) {
-                  mapRef.current.removeLayer(truckMarkerRef.current);
-                }
-                truckMarkerRef.current.remove();
-              } catch (e) {
-                // Marker might already be removed
-              }
-              truckMarkerRef.current = null;
-            }
-            
-            mapRef.current.setView(donPedro, 16);
-            const currentTruckNo = truckNo;
-            if (currentTruckNo) {
-              const icon = createTruckIcon(false, currentTruckNo);
-              const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-              truckMarkerRef.current = marker;
-              const popupContent = createTruckInfoPopup(currentTruckNo);
-              marker.bindPopup(popupContent, {
-                className: 'custom-truck-popup',
-                closeButton: false,
-              });
-              marker.on('popupopen', () => {
-                const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
-                if (closeBtn) {
-                  closeBtn.onclick = () => {
-                    marker.closePopup();
-                  };
-                }
-              });
-            }
-            mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
+            // Don't place truck if GPS fails - wait for valid GPS coordinates
+            // Truck will appear once GPS is available
           },
           { enableHighAccuracy: true, timeout: 8000 },
         );
       } else {
-        // Fallback if geolocation not available
-        if (!mapRef.current) return;
-        const currentTruckNo = truckNo;
-        // Remove any existing marker first
-        if (truckMarkerRef.current) {
-          try {
-            if (mapRef.current.hasLayer(truckMarkerRef.current)) {
-              mapRef.current.removeLayer(truckMarkerRef.current);
-            }
-            truckMarkerRef.current.remove();
-          } catch (e) {
-            // Marker might already be removed
-          }
-          truckMarkerRef.current = null;
-        }
-        
-        mapRef.current.setView(donPedro, 16);
-        if (currentTruckNo) {
-          const icon = createTruckIcon(false, currentTruckNo);
-          const marker = L.marker(donPedro, { icon }).addTo(mapRef.current);
-          truckMarkerRef.current = marker;
-          const popupContent = createTruckInfoPopup(currentTruckNo);
-          marker.bindPopup(popupContent, {
-            className: 'custom-truck-popup',
-            closeButton: false,
-          });
-          marker.on('popupopen', () => {
-            const closeBtn = document.getElementById(`truck-info-close-btn-${currentTruckNo}`);
-            if (closeBtn) {
-              closeBtn.onclick = () => {
-                marker.closePopup();
-              };
-            }
-          });
-        }
-        mapRef.current.fitBounds(L.latLngBounds(stops), { padding: [32, 32] });
+        // Geolocation not available - don't place truck at predefined location
+        // Truck will appear once geolocation becomes available
+        console.warn('Geolocation is not available in this browser.');
       }
     }, 300);
   };
@@ -934,9 +964,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     } catch (error) {
       console.error('Error resetting truck status:', error);
     } finally {
-      // Always go back to home page
+      // Always go back to home page, pass true to indicate we stopped collecting
       if (onBack) {
-        onBack();
+        onBack(true);
       }
     }
   };
@@ -1089,42 +1119,172 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     }
   };
 
-  // Add selected location marker when selectedLocation changes
+  // Auto-place flags for selected day's locations from tempStorage (passed from home page)
+  useEffect(() => {
+    if (!mapRef.current) return;
+
+    const placeFlagsFromDayLocations = () => {
+      // Use dayLocations from props (passed from home page via stack)
+      if (!dayLocations || dayLocations.length === 0) {
+        console.log('No dayLocations provided to route page, cannot place flags');
+        return;
+      }
+
+      console.log(`Route page: Placing flags for ${selectedDay || 'selected day'}:`, dayLocations);
+
+      // Create red flag icon
+      const flagIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      });
+
+      // Place flags for each location using lat/lng from dayLocations
+      dayLocations.forEach((location, index) => {
+        const lat = Number(location.lat);
+        const lng = Number(location.lng);
+
+        // Validate coordinates
+        if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+          console.error(`Route page: Invalid coordinates for location ${index}:`, location);
+          return;
+        }
+
+        const locationKey = `${location.scheduleId}-${location.locationIndex}-${lat}-${lng}-${location.street}-${location.barangay}`;
+        const displayText = location.street 
+          ? `${location.street} / ${location.barangay}` 
+          : location.barangay;
+
+        // Check if marker already exists
+        let markerExists = false;
+        mapRef.current!.eachLayer((layer) => {
+          if (layer instanceof L.Marker) {
+            const markerPos = layer.getLatLng();
+            if (Math.abs(markerPos.lat - lat) < 0.0001 && Math.abs(markerPos.lng - lng) < 0.0001) {
+              markerExists = true;
+            }
+          }
+        });
+
+        if (!markerExists) {
+          console.log(`Route page: Placing flag ${index + 1}/${dayLocations.length} at:`, lat, lng, displayText);
+          const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current!);
+          
+          // Create popup with cancel button
+          const popupContent = `
+            <div style="text-align: center;">
+              <strong>Collection Start Point</strong><br/>
+              ${displayText}<br/>
+              <button id="remove-flag-route-${locationKey}" style="
+                margin-top: 0.5rem;
+                padding: 0.375rem 0.75rem;
+                background: #dc2626;
+                color: white;
+                border: none;
+                border-radius: 0.375rem;
+                cursor: pointer;
+                font-size: 0.875rem;
+                font-weight: 600;
+              ">Remove</button>
+            </div>
+          `;
+          marker.bindPopup(popupContent);
+          
+          // Add click handler for cancel button
+          marker.on('popupopen', () => {
+            const removeButton = document.getElementById(`remove-flag-route-${locationKey}`);
+            if (removeButton) {
+              removeButton.onclick = () => {
+                if (mapRef.current && mapRef.current.hasLayer(marker)) {
+                  mapRef.current.removeLayer(marker);
+                }
+                marker.closePopup();
+              };
+            }
+          });
+
+          // Store in scheduleFlagRef if it's the first one (for backward compatibility)
+          if (index === 0 && !scheduleFlagRef.current) {
+            scheduleFlagRef.current = marker;
+          }
+          
+          console.log(`Route page: ✓ Flag placed successfully at ${lat}, ${lng}`);
+        } else {
+          console.log(`Route page: Flag already exists at ${lat}, ${lng}, skipping...`);
+        }
+      });
+
+      console.log(`Route page: Finished placing flags. Total flags placed: ${dayLocations.length}`);
+    };
+
+    // Delay to ensure map is fully ready
+    const timeoutId = setTimeout(() => {
+      placeFlagsFromDayLocations();
+    }, 300);
+
+    return () => clearTimeout(timeoutId);
+  }, [mapRef.current, selectedDay, dayLocations]);
+
+  // Also handle selectedLocation if provided (legacy support)
   useEffect(() => {
     if (!mapRef.current || !selectedLocation) return;
 
     const selectedPos: L.LatLngExpression = [selectedLocation.lat, selectedLocation.lng];
     
-    // Check if marker already exists (from handleMapReady)
-    const existingMarkers = mapRef.current.eachLayer((layer) => {
-      if (layer instanceof L.Marker) {
-        const markerPos = layer.getLatLng();
-        if (Math.abs(markerPos.lat - selectedLocation.lat) < 0.0001 && 
-            Math.abs(markerPos.lng - selectedLocation.lng) < 0.0001) {
-          return layer;
+    // Remove existing schedule flag if any (old single flag behavior)
+    if (scheduleFlagRef.current && mapRef.current.hasLayer(scheduleFlagRef.current)) {
+      // Don't remove if it's one of our Monday flags - just center on selectedLocation
+      const existingPos = scheduleFlagRef.current.getLatLng();
+      if (Math.abs(existingPos.lat - selectedLocation.lat) > 0.0001 || 
+          Math.abs(existingPos.lng - selectedLocation.lng) > 0.0001) {
+        // Different location, check if we need to add a new marker
+        let markerExists = false;
+        mapRef.current.eachLayer((layer) => {
+          if (layer instanceof L.Marker) {
+            const markerPos = layer.getLatLng();
+            if (Math.abs(markerPos.lat - selectedLocation.lat) < 0.0001 && 
+                Math.abs(markerPos.lng - selectedLocation.lng) < 0.0001) {
+              markerExists = true;
+            }
+          }
+        });
+
+        if (!markerExists) {
+          const flagIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+          });
+
+          const marker = L.marker(selectedPos, { icon: flagIcon }).addTo(mapRef.current);
+          marker.bindPopup(`<strong>Collection Start Point</strong><br/>${selectedLocation.name || ''}`).openPopup();
+          scheduleFlagRef.current = marker;
         }
       }
-      return null;
-    });
+    } else if (!scheduleFlagRef.current) {
+      // No existing flag, create one for selectedLocation
+      const flagIcon = L.icon({
+        iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+        shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+        iconSize: [25, 41],
+        iconAnchor: [12, 41],
+        popupAnchor: [1, -34],
+        shadowSize: [41, 41]
+      });
 
-    // Only add if it doesn't exist
-    let markerExists = false;
-    mapRef.current.eachLayer((layer) => {
-      if (layer instanceof L.Marker) {
-        const markerPos = layer.getLatLng();
-        if (Math.abs(markerPos.lat - selectedLocation.lat) < 0.0001 && 
-            Math.abs(markerPos.lng - selectedLocation.lng) < 0.0001) {
-          markerExists = true;
-        }
-      }
-    });
-
-    if (!markerExists) {
-      const marker = L.marker(selectedPos, { icon: searchFlagIcon }).addTo(mapRef.current);
-      marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${selectedLocation.name}</div>`);
-      marker.openPopup();
-      mapRef.current.setView(selectedPos, 17);
+      const marker = L.marker(selectedPos, { icon: flagIcon }).addTo(mapRef.current);
+      marker.bindPopup(`<strong>Collection Start Point</strong><br/>${selectedLocation.name || ''}`).openPopup();
+      scheduleFlagRef.current = marker;
     }
+
+    // Center on selected location
+    mapRef.current.setView(selectedPos, 17);
   }, [selectedLocation]);
 
   useEffect(() => {
@@ -1137,6 +1297,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
       if (searchMarkerRef.current) {
         searchMarkerRef.current.remove();
         searchMarkerRef.current = null;
+      }
+      if (scheduleFlagRef.current && mapRef.current) {
+        mapRef.current.removeLayer(scheduleFlagRef.current);
+        scheduleFlagRef.current = null;
       }
       // Cleanup other truck markers
       otherTrucksRef.current.forEach((marker) => {
@@ -1234,33 +1398,42 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           </div>
         )}
 
-        <div style={{ padding: '0.25rem 1rem 5.5rem' }}>
-          <div className="watch-card" style={{ overflow: 'hidden', height: '63vh', borderRadius: 24, position: 'relative' }}>
-            <AnyMapView id="collector-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
-            
-            {/* Search Button */}
-            <button
-              type="button"
-              onClick={() => setShowSearch(!showSearch)}
-              style={{
-                position: 'absolute',
-                top: '1rem',
-                right: '1rem',
-                zIndex: 1000,
-                backgroundColor: 'white',
-                border: 'none',
-                borderRadius: 12,
-                padding: '0.75rem',
-                boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                cursor: 'pointer',
-              }}
-            >
-              <IonIcon icon={searchOutline} style={{ fontSize: '1.2rem', color: '#16a34a' }} />
-            </button>
-          </div>
+        <div 
+          className="watch-card" 
+          style={{ 
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            overflow: 'hidden',
+            borderRadius: 0,
+          }}
+        >
+          <AnyMapView id="collector-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
+          
+          {/* Search Button */}
+          <button
+            type="button"
+            onClick={() => setShowSearch(!showSearch)}
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              zIndex: 1000,
+              backgroundColor: 'white',
+              border: 'none',
+              borderRadius: 12,
+              padding: '0.75rem',
+              boxShadow: '0 4px 12px rgba(15, 23, 42, 0.15)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              cursor: 'pointer',
+            }}
+          >
+            <IonIcon icon={searchOutline} style={{ fontSize: '1.2rem', color: '#16a34a' }} />
+          </button>
         </div>
 
         <div
@@ -1270,8 +1443,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             right: 0,
             bottom: 0,
             padding: '0.75rem 1rem 1.25rem',
-            background: 'linear-gradient(180deg, rgba(243,244,251,0.9) 0%, #f3f4fb 40%, #f3f4fb 100%)',
-            boxShadow: '0 -8px 24px rgba(15, 23, 42, 0.08)',
+            background: 'transparent',
+            zIndex: 10000,
           }}
         >
           <div
@@ -1294,6 +1467,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 fontWeight: 700,
                 fontSize: '0.9rem',
                 boxShadow: '0 14px 28px rgba(234, 179, 8, 0.6)',
+                zIndex: 10001,
+                position: 'relative',
               }}
             >
               Stop Collecting
@@ -1312,6 +1487,8 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 fontWeight: 800,
                 fontSize: '1rem',
                 boxShadow: '0 16px 32px rgba(239, 68, 68, 0.7)',
+                zIndex: 10001,
+                position: 'relative',
               }}
             >
               FULL

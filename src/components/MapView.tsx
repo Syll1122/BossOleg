@@ -112,22 +112,84 @@ const MapView: React.FC<MapViewProps> = ({ id, center, zoom = 15, onMapReady }) 
     };
   }, [id]); // Only recreate map when id changes
 
-  // Update map center and zoom when props change (without recreating the map)
+  // Track the last center/zoom we set to avoid unnecessary updates
+  const lastCenterRef = useRef<[number, number] | null>(null);
+  const lastZoomRef = useRef<number | null>(null);
+  const isInitializedRef = useRef(false);
+
+  // Only update map center/zoom when props actually change
+  // This prevents the map from resetting when component re-renders
   useEffect(() => {
-    if (mapInstanceRef.current) {
-      const [lat, lng] = center;
-      if (
-        typeof lat === 'number' &&
-        typeof lng === 'number' &&
-        !isNaN(lat) &&
-        !isNaN(lng) &&
-        lat >= -90 &&
-        lat <= 90 &&
-        lng >= -180 &&
-        lng <= 180
-      ) {
-        mapInstanceRef.current.setView([lat, lng], zoom);
+    if (!mapInstanceRef.current) return;
+
+    const [lat, lng] = center;
+    if (
+      typeof lat !== 'number' ||
+      typeof lng !== 'number' ||
+      isNaN(lat) ||
+      isNaN(lng) ||
+      lat < -90 ||
+      lat > 90 ||
+      lng < -180 ||
+      lng > 180
+    ) {
+      return;
+    }
+
+    // Check if this is the first time setting center
+    if (!isInitializedRef.current) {
+      mapInstanceRef.current.setView([lat, lng], zoom);
+      lastCenterRef.current = [lat, lng];
+      lastZoomRef.current = zoom;
+      isInitializedRef.current = true;
+      return;
+    }
+
+    // Only update if center or zoom actually changed
+    const centerChanged = lastCenterRef.current === null ||
+      Math.abs(lastCenterRef.current[0] - lat) > 0.0001 ||
+      Math.abs(lastCenterRef.current[1] - lng) > 0.0001;
+    
+    const zoomChanged = lastZoomRef.current === null || lastZoomRef.current !== zoom;
+
+    // Don't update if values haven't changed - this prevents map reset on re-renders
+    if (!centerChanged && !zoomChanged) {
+      return;
+    }
+
+    // Only update if center changed significantly (more than 1 meter)
+    // This prevents resetting when user has manually panned the map
+    if (centerChanged && lastCenterRef.current) {
+      const currentCenter = mapInstanceRef.current.getCenter();
+      const distance = mapInstanceRef.current.distance(
+        currentCenter,
+        L.latLng(lastCenterRef.current[0], lastCenterRef.current[1])
+      );
+      
+      // If user has moved the map more than 10 meters, don't reset it
+      // This means they intentionally moved it, so respect their choice
+      if (distance > 10) {
+        // User has manually moved the map, don't reset it
+        // Only update zoom if it changed
+        if (zoomChanged) {
+          mapInstanceRef.current.setZoom(zoom);
+          lastZoomRef.current = zoom;
+        }
+        return;
       }
+    }
+
+    // Update map view only if center/zoom actually changed
+    if (centerChanged || zoomChanged) {
+      if (centerChanged && zoomChanged) {
+        mapInstanceRef.current.setView([lat, lng], zoom);
+      } else if (centerChanged) {
+        mapInstanceRef.current.panTo([lat, lng]);
+      } else if (zoomChanged) {
+        mapInstanceRef.current.setZoom(zoom);
+      }
+      lastCenterRef.current = [lat, lng];
+      lastZoomRef.current = zoom;
     }
   }, [center, zoom]);
 

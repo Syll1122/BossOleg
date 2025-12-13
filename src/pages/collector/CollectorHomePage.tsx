@@ -19,6 +19,7 @@ import { databaseService } from '../../services/database';
 import NotificationBell from '../../components/NotificationBell';
 import { requestGeolocation, getGeolocationErrorMessage, isSecureContext } from '../../utils/geolocation';
 import { isValidCoordinate } from '../../utils/coordinates';
+import { supabase } from '../../services/supabase';
 
 interface ScheduleLocation {
   name: string;
@@ -27,11 +28,17 @@ interface ScheduleLocation {
 }
 
 interface CollectorHomePageProps {
-  onStartCollecting: (selectedLocation?: ScheduleLocation) => void;
+  onStartCollecting: (selectedLocation?: ScheduleLocation, selectedDay?: string | null, dayLocations?: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>) => void;
+  hasStoppedCollecting?: boolean;
+  onClearStoppedFlag?: () => void;
+  selectedDayFromStack?: string | null;
+  dayLocationsFromStack?: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>;
 }
 
-const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting }) => {
+const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting, hasStoppedCollecting = false, onClearStoppedFlag, selectedDayFromStack, dayLocationsFromStack }) => {
   const mapRef = useRef<L.Map | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const controlPanelRef = useRef<HTMLDivElement>(null);
   const [showLocationPrompt, setShowLocationPrompt] = useState(false);
   const [showLocationError, setShowLocationError] = useState(false);
   const [locationErrorMessage, setLocationErrorMessage] = useState('');
@@ -39,17 +46,66 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [truckIsFull, setTruckIsFull] = useState(false);
   const [collectorName, setCollectorName] = useState('Manong Collector');
   const [truckNo, setTruckNo] = useState('BCG 11*4');
-  const [scheduleFlags, setScheduleFlags] = useState<Map<string, L.Marker>>(new Map());
+  const [showSchedulePanel, setShowSchedulePanel] = useState(false);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [selectedSchedule, setSelectedSchedule] = useState<any | null>(null);
+  const [flagMarker, setFlagMarker] = useState<L.Marker | null>(null);
+  const [flagMarkers, setFlagMarkers] = useState<Map<string, L.Marker>>(new Map()); // Store multiple markers by location key
+  const [dayLocations, setDayLocations] = useState<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>([]);
+  // Temporary storage organized by day: Map<day, Array<locations>>
+  const [tempStorage, setTempStorage] = useState<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>>(new Map());
   const history = useHistory();
 
-  // Schedule locations with coordinates
-  const scheduleLocations: ScheduleLocation[] = [
-    { name: 'Don Pedro, HOLY SPIRIT', lat: 14.682042, lng: 121.076975 },
-    { name: 'Don Primitivo, HOLY SPIRIT', lat: 14.680823, lng: 121.076206 },
-    { name: 'Don Elpidio, HOLY SPIRIT', lat: 14.679855, lng: 121.077793 },
-  ];
+  const daysOfWeek = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+  const dayAbbreviations: Record<string, string> = {
+    'Monday': 'Mon',
+    'Tuesday': 'Tue',
+    'Wednesday': 'Wed',
+    'Thursday': 'Thu',
+    'Friday': 'Fri',
+    'Saturday': 'Sat'
+  };
 
-  // Load collector name and truck status
+  // Dynamically adjust map height based on control panel height
+  useEffect(() => {
+    const adjustMapHeight = () => {
+      if (mapContainerRef.current && controlPanelRef.current) {
+        const panelHeight = controlPanelRef.current.offsetHeight;
+        const mapBottom = panelHeight + 16; // 16px margin
+        mapContainerRef.current.style.bottom = `${mapBottom}px`;
+        
+        // Invalidate map size to ensure it renders correctly
+        if (mapRef.current) {
+          setTimeout(() => {
+            mapRef.current?.invalidateSize();
+          }, 50);
+        }
+      }
+    };
+
+    // Adjust on mount and when dependencies change
+    adjustMapHeight();
+
+    // Use ResizeObserver to watch for panel height changes
+    const resizeObserver = new ResizeObserver(() => {
+      adjustMapHeight();
+    });
+
+    if (controlPanelRef.current) {
+      resizeObserver.observe(controlPanelRef.current);
+    }
+
+    // Also adjust on window resize
+    window.addEventListener('resize', adjustMapHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener('resize', adjustMapHeight);
+    };
+  }, [selectedDay, dayLocations, tempStorage, hasStoppedCollecting]);
+
+  // Load collector name, truck status, and schedules
   useEffect(() => {
     const loadData = async () => {
       try {
@@ -89,6 +145,14 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 });
               }
             }
+
+            // Load schedules for this collector
+            try {
+              const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+              setSchedules(collectorSchedules);
+            } catch (error) {
+              console.error('Error loading schedules:', error);
+            }
           }
         }
       } catch (error) {
@@ -107,6 +171,86 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     
     return () => clearInterval(statusInterval);
   }, []);
+
+  // Load locations when stopping collection - use selectedDay from stack if available
+  useEffect(() => {
+    if (hasStoppedCollecting && schedules.length > 0) {
+      const loadDayLocations = async () => {
+        // Use selectedDayFromStack if available, otherwise use selectedDay, otherwise try Monday
+        const dayToLoad = selectedDayFromStack || selectedDay || 'Monday';
+        
+        // Check if the day still exists in schedules before trying to load it
+        // This prevents reloading locations for a day that was just removed
+        if (!isDayScheduled(dayToLoad)) {
+          console.log(`Day ${dayToLoad} no longer scheduled, skipping load`);
+          // Clear UI if the day was removed
+          if (selectedDay === dayToLoad) {
+            setSelectedDay(null);
+            setDayLocations([]);
+          }
+          return;
+        }
+        
+        const daySchedules = getSchedulesForDay(dayToLoad);
+        
+        if (daySchedules.length > 0) {
+          setSelectedSchedule(null);
+          setSelectedDay(dayToLoad);
+          
+          // Extract all locations from all schedules for this day (fresh from database)
+          const allLocations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+          daySchedules.forEach(schedule => {
+            const locations = extractLocationsFromSchedule(schedule);
+            allLocations.push(...locations);
+          });
+          
+          console.log(`Loading ${dayToLoad} locations after stopping collection:`, allLocations);
+          
+          // Only reload from database if temp storage doesn't already have this day
+          // This preserves any DONE removals that haven't been saved to database yet
+          setTempStorage(prev => {
+            const newMap = new Map(prev);
+            // Only set if not already in temp storage (to preserve DONE removals)
+            if (!newMap.has(dayToLoad)) {
+              newMap.set(dayToLoad, allLocations);
+              // Update dayLocations to show the locations
+              setDayLocations(allLocations);
+            } else {
+              // Use existing temp storage data (preserves DONE removals)
+              const existingLocations = newMap.get(dayToLoad) || [];
+              setDayLocations(existingLocations);
+            }
+            return newMap;
+          });
+        } else {
+          // If dayLocationsFromStack is provided, use it directly
+          if (dayLocationsFromStack && dayLocationsFromStack.length > 0 && selectedDayFromStack) {
+            setSelectedDay(selectedDayFromStack);
+            setDayLocations(dayLocationsFromStack);
+            setTempStorage(prev => {
+              const newMap = new Map(prev);
+              newMap.set(selectedDayFromStack, dayLocationsFromStack);
+              return newMap;
+            });
+          } else {
+            console.log(`No schedules found for ${dayToLoad}`);
+          }
+        }
+      };
+      
+      // Small delay to ensure state is ready
+      setTimeout(loadDayLocations, 100);
+    } else if (selectedDayFromStack && dayLocationsFromStack && dayLocationsFromStack.length > 0 && !hasStoppedCollecting) {
+      // If we have data from stack and not stopped collecting, restore it
+      setSelectedDay(selectedDayFromStack);
+      setDayLocations(dayLocationsFromStack);
+      setTempStorage(prev => {
+        const newMap = new Map(prev);
+        newMap.set(selectedDayFromStack, dayLocationsFromStack);
+        return newMap;
+      });
+    }
+  }, [hasStoppedCollecting, schedules, selectedDayFromStack, dayLocationsFromStack]);
 
   const handleMapReady = (map: L.Map) => {
     mapRef.current = map;
@@ -147,132 +291,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
-    // Load and display all collector trucks on the map
-    const loadAllTrucks = async () => {
-      try {
-        await databaseService.init();
-        const userId = getCurrentUserId();
-        if (!userId) return;
-
-        // Get current user's account
-        const currentAccount = await databaseService.getAccountById(userId);
-        if (!currentAccount?.truckNo) return;
-
-        // Get all collector accounts
-        const collectors = await databaseService.getAccountsByRole('collector');
-        
-        // Create truck icon function
-        const createTruckIcon = (isRed: boolean, truckNumber: string) => {
-          return L.divIcon({
-            html: `
-              <div style="display: flex; flex-direction: column; align-items: center;">
-                <div style="font-size: 24px;">🚛</div>
-                <div style="background: ${isRed ? '#ef4444' : 'white'}; color: ${isRed ? 'white' : '#1f2937'}; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; margin-top: 2px; box-shadow: 0 2px 4px rgba(0,0,0,0.2); white-space: nowrap;">
-                  ${truckNumber}
-                </div>
-              </div>
-            `,
-            className: isRed ? 'watch-truck-icon watch-truck-icon--red' : 'watch-truck-icon watch-truck-icon--white',
-            iconSize: [50, 42],
-            iconAnchor: [25, 38],
-          });
-        };
-
-        // Add markers for all collector trucks (only those with valid accounts and truck numbers)
-        for (const collector of collectors) {
-          // Only show trucks that have valid accounts with truck numbers, and exclude current user
-          if (collector.id && collector.truckNo && collector.truckNo.trim() !== '' && collector.id !== userId) {
-            // Get truck status
-            const status = await databaseService.getTruckStatus(collector.truckNo);
-            const isFull = status?.isFull || false;
-            
-            // Use default location (you can enhance this to get actual GPS location)
-            // For now, placing them at different locations around the center
-            const baseLat = 14.683726;
-            const baseLng = 121.076224;
-            const offset = collectors.indexOf(collector) * 0.002; // Small offset for each truck
-            
-            const truckLat = baseLat + offset;
-            const truckLng = baseLng + offset;
-            
-            const icon = createTruckIcon(isFull, collector.truckNo);
-            const marker = L.marker([truckLat, truckLng], { icon }).addTo(map);
-            
-            // Create popup with modern design matching the second image
-            const popupContent = document.createElement('div');
-            popupContent.style.cssText = `
-              background: white;
-              border-radius: 12px;
-              padding: 0;
-              min-width: 200px;
-              box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-            `;
-            
-            popupContent.innerHTML = `
-              <div style="
-                display: flex;
-                align-items: center;
-                justify-content: space-between;
-                padding: 0.75rem 1rem;
-                border-bottom: 1px solid #e5e7eb;
-              ">
-                <div style="display: flex; align-items: center; gap: 0.5rem;">
-                  <div style="font-size: 1.2rem;">🚛</div>
-                  <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937;">${collector.truckNo}</div>
-                </div>
-                <button 
-                  id="truck-close-btn-${collector.truckNo}"
-                  style="
-                    background: none;
-                    border: none;
-                    font-size: 1.2rem;
-                    color: #6b7280;
-                    cursor: pointer;
-                    padding: 0;
-                    width: 24px;
-                    height: 24px;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    line-height: 1;
-                  "
-                  onmouseover="this.style.color='#1f2937'"
-                  onmouseout="this.style.color='#6b7280'"
-                >×</button>
-              </div>
-              <div style="padding: 0.75rem 1rem;">
-                <div style="font-weight: 600; font-size: 0.9rem; color: #1f2937; margin-bottom: 0.5rem;">
-                  Collector: ${collector.name || 'N/A'}
-                </div>
-                <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.85rem;">
-                  <span style="
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 50%;
-                    background-color: ${isFull ? '#ef4444' : '#16a34a'};
-                    display: inline-block;
-                  "></span>
-                  <span style="color: ${isFull ? '#ef4444' : '#16a34a'}; font-weight: 500;">
-                    ${isFull ? 'Full' : 'Available'}
-                  </span>
-                </div>
-              </div>
-            `;
-            
-            marker.bindPopup(popupContent, {
-              className: 'custom-truck-popup',
-              closeButton: false,
-            });
-          }
-        }
-      } catch (error) {
-        console.error('Error loading other trucks:', error);
-      }
-    };
-
     // Wait a bit for map to be fully ready
     setTimeout(() => {
-      loadAllTrucks();
+      // Trucks are no longer displayed on the collector home page
       
       // Get collector location and add radius circle
       if (navigator.geolocation) {
@@ -314,6 +335,635 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     }, 500);
   };
 
+  // Check if a day is scheduled
+  const isDayScheduled = (day: string): boolean => {
+    const dayAbbr = dayAbbreviations[day];
+    return schedules.some(schedule => 
+      schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+    );
+  };
+
+  // Get schedules for a specific day
+  const getSchedulesForDay = (day: string): any[] => {
+    const dayAbbr = dayAbbreviations[day];
+    return schedules.filter(schedule => 
+      schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+    );
+  };
+
+  // Get the first scheduled day of the week
+  const getFirstScheduledDay = (): string | null => {
+    for (const day of daysOfWeek) {
+      if (isDayScheduled(day)) {
+        return day;
+      }
+    }
+    return null;
+  };
+
+  // Extract all locations from a schedule (handles arrays)
+  const extractLocationsFromSchedule = (schedule: any): Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> => {
+    const locations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+    
+    console.log('Extracting locations from schedule:', schedule);
+    
+    // Handle arrays for street_name, barangay_name, latitude, longitude
+    const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : (schedule.street_name ? [schedule.street_name] : []);
+    const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : (schedule.barangay_name ? [schedule.barangay_name] : []);
+    const latitudes = Array.isArray(schedule.latitude) ? schedule.latitude : (schedule.latitude !== null && schedule.latitude !== undefined ? [schedule.latitude] : []);
+    const longitudes = Array.isArray(schedule.longitude) ? schedule.longitude : (schedule.longitude !== null && schedule.longitude !== undefined ? [schedule.longitude] : []);
+    
+    console.log('Parsed arrays:', { streetNames, barangayNames, latitudes, longitudes });
+    
+    // Get the maximum length to iterate
+    const maxLength = Math.max(streetNames.length, barangayNames.length, latitudes.length, longitudes.length, 1);
+    
+    // If no arrays found, try to create at least one location from single values
+    if (maxLength === 0) {
+      const street = schedule.street_name || '';
+      const barangay = schedule.barangay_name || '';
+      const lat = schedule.latitude;
+      const lng = schedule.longitude;
+      
+      if ((lat !== null && lat !== undefined) && (lng !== null && lng !== undefined) && (street || barangay)) {
+        locations.push({
+          street: street || '',
+          barangay: barangay || '',
+          lat: Number(lat),
+          lng: Number(lng),
+          scheduleId: schedule.id || '',
+          locationIndex: 0
+        });
+      }
+      return locations;
+    }
+    
+    // Create location entries for each index
+    for (let i = 0; i < maxLength; i++) {
+      const street = streetNames[i] || '';
+      const barangay = barangayNames[i] || (barangayNames[0] || '');
+      const lat = latitudes[i] !== null && latitudes[i] !== undefined ? Number(latitudes[i]) : (latitudes[0] !== null && latitudes[0] !== undefined ? Number(latitudes[0]) : null);
+      const lng = longitudes[i] !== null && longitudes[i] !== undefined ? Number(longitudes[i]) : (longitudes[0] !== null && longitudes[0] !== undefined ? Number(longitudes[0]) : null);
+      
+      if (lat !== null && !isNaN(lat) && lng !== null && !isNaN(lng) && (street || barangay)) {
+        locations.push({
+          street: street || '',
+          barangay: barangay || '',
+          lat: lat,
+          lng: lng,
+          scheduleId: schedule.id || '',
+          locationIndex: i
+        });
+      }
+    }
+    
+    console.log('Extracted locations:', locations);
+    return locations;
+  };
+
+  // Handle day selection - show all locations for that day below Start Collecting button
+  const handleDayClick = async (day: string) => {
+    try {
+      await databaseService.init();
+      
+      // Check if day exists in the days column
+      if (!isDayScheduled(day)) {
+        // Day doesn't exist in days column, don't do anything
+        console.log(`Day ${day} not scheduled`);
+        return;
+      }
+
+      const daySchedules = getSchedulesForDay(day);
+      if (daySchedules.length > 0) {
+        // Clear previous selected schedule
+        setSelectedSchedule(null);
+        setSelectedDay(day);
+        
+        // Extract all locations from all schedules for this day
+        const allLocations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+        daySchedules.forEach(schedule => {
+          const locations = extractLocationsFromSchedule(schedule);
+          allLocations.push(...locations);
+        });
+        
+        console.log('Day selected:', day, 'Locations found:', allLocations);
+        
+        // If no locations found, remove the day from database
+        if (allLocations.length === 0) {
+          console.log(`No locations found for ${day}, removing day from database`);
+          // Find the schedule that has this day and remove it
+          for (const schedule of daySchedules) {
+            await removeDayFromSchedule(day, schedule.id);
+          }
+          // Reload schedules
+          const userId = getCurrentUserId();
+          if (userId) {
+            const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+            setSchedules(collectorSchedules);
+          }
+          return;
+        }
+        
+        // Load into temporary storage for this day
+        setTempStorage(prev => {
+          const newMap = new Map(prev);
+          // Always update temp storage with current locations (overwrite if exists)
+          newMap.set(day, allLocations);
+          return newMap;
+        });
+        
+        // Update dayLocations separately to ensure state update
+        setDayLocations(allLocations);
+        
+        // Close the panel so locations show below Start Collecting button
+        setShowSchedulePanel(false);
+      } else {
+        // No schedules found for this day, remove it from database
+        console.log(`No schedules found for ${day}, removing day from database`);
+        const dayAbbr = dayAbbreviations[day];
+        const schedulesWithDay = schedules.filter(schedule => 
+          schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+        );
+        for (const schedule of schedulesWithDay) {
+          await removeDayFromSchedule(day, schedule.id);
+        }
+        // Reload schedules
+        const userId = getCurrentUserId();
+        if (userId) {
+          const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+          setSchedules(collectorSchedules);
+        }
+      }
+    } catch (error) {
+      console.error('Error in handleDayClick:', error);
+    }
+  };
+
+  // Handle marking a location as DONE - remove it from temp storage only (not from database lat/lng)
+  const handleLocationDone = async (location: {street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}) => {
+    if (!selectedDay) return;
+    
+    try {
+      await databaseService.init();
+      
+      console.log(`Marking location as DONE: ${location.street} / ${location.barangay} for day ${selectedDay}`);
+      
+      // FIRST: Remove from temp storage only (do NOT touch database lat/lng/street/barangay)
+      const currentLocations = tempStorage.get(selectedDay) || [];
+      const updatedLocations = currentLocations.filter(loc => 
+        !(loc.scheduleId === location.scheduleId && 
+          loc.street === location.street &&
+          loc.barangay === location.barangay &&
+          Math.abs(loc.lat - location.lat) < 0.0001 && 
+          Math.abs(loc.lng - location.lng) < 0.0001)
+      );
+      
+      console.log(`Removed location from temp storage. Remaining: ${updatedLocations.length}`);
+      
+      // Update temp storage with remaining locations
+      setTempStorage(prev => {
+        const newMap = new Map(prev);
+        if (updatedLocations.length === 0) {
+          // If no more locations, delete the day from temp storage
+          newMap.delete(selectedDay);
+          console.log(`Temp storage cleared for ${selectedDay} - no more locations`);
+        } else {
+          // Still has locations, update temp storage
+          newMap.set(selectedDay, updatedLocations);
+        }
+        return newMap;
+      });
+      
+      // Update UI to reflect the change
+      setDayLocations(updatedLocations);
+      
+      // If day has no more locations in temp storage, remove the day from database days array
+      if (updatedLocations.length === 0) {
+        console.log(`All locations done for ${selectedDay}, removing day from database days array...`);
+        
+        // Store the day before removing it
+        const dayToRemove = selectedDay;
+        
+        // Remove the day from the schedule's days array in database (await to ensure it completes)
+        await removeDayFromSchedule(dayToRemove || '', location.scheduleId);
+        console.log(`Day ${dayToRemove} removed from database days array`);
+        
+        // Clear selected day and locations from UI IMMEDIATELY (before reloading schedules)
+        // This prevents useEffect from trying to reload the removed day
+        setSelectedDay(null);
+        setDayLocations([]);
+        
+        // Remove from temp storage
+        setTempStorage(prev => {
+          const newMap = new Map(prev);
+          newMap.delete(dayToRemove || '');
+          return newMap;
+        });
+      }
+      
+      // Remove marker from map if it exists - use same key format as handleLocationSelect
+      const locationKey = `${location.scheduleId}-${location.locationIndex}-${location.lat}-${location.lng}-${location.street}-${location.barangay}`;
+      const marker = flagMarkers.get(locationKey);
+      if (marker && mapRef.current && mapRef.current.hasLayer(marker)) {
+        mapRef.current.removeLayer(marker);
+      }
+      setFlagMarkers(prev => {
+        const newMap = new Map(prev);
+        newMap.delete(locationKey);
+        return newMap;
+      });
+      
+      // Only reload schedules if we removed the day from database (not on every DONE click)
+      // selectedDay is already cleared above, so useEffect won't reload the removed day
+      if (updatedLocations.length === 0) {
+        const userId = getCurrentUserId();
+        if (userId) {
+          const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+          setSchedules(collectorSchedules);
+        }
+      }
+    } catch (error) {
+      console.error('Error marking location as done:', error);
+      alert('Failed to mark location as done. Please try again.');
+    }
+  };
+  
+  // Remove a day from a schedule's days array in the database
+  const removeDayFromSchedule = async (day: string, scheduleId: string) => {
+    try {
+      const dayAbbr = dayAbbreviations[day];
+      if (!dayAbbr) return;
+      
+      // Get the current schedule
+      const { data: schedule, error: fetchError } = await supabase
+        .from('collection_schedules')
+        .select('days')
+        .eq('id', scheduleId)
+        .single();
+      
+      if (fetchError || !schedule) {
+        console.error('Error fetching schedule:', fetchError);
+        return;
+      }
+      
+      // Remove the day from the days array
+      const currentDays = Array.isArray(schedule.days) ? [...schedule.days] : [];
+      const updatedDays = currentDays.filter(d => d !== dayAbbr);
+      
+      // Update the schedule with the modified days array
+      const { error: updateError } = await supabase
+        .from('collection_schedules')
+        .update({
+          days: updatedDays,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', scheduleId);
+      
+      if (updateError) {
+        console.error('Error updating schedule days:', updateError);
+      } else {
+        console.log(`Removed ${day} from schedule ${scheduleId}`);
+      }
+    } catch (error) {
+      console.error('Error removing day from schedule:', error);
+    }
+  };
+
+  // Handle location selection from day locations - place a flag when button is clicked
+  const handleLocationSelect = (location: {street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}) => {
+    if (!mapRef.current) return;
+    
+    // Create a unique key for this location - include scheduleId and locationIndex to ensure uniqueness
+    const locationKey = `${location.scheduleId}-${location.locationIndex}-${location.lat}-${location.lng}-${location.street}-${location.barangay}`;
+    
+    // Check if marker already exists for this location
+    const existingMarker = flagMarkers.get(locationKey);
+    if (existingMarker && mapRef.current.hasLayer(existingMarker)) {
+      // Marker already exists, just center on it
+      mapRef.current.flyTo([location.lat, location.lng], 16);
+      existingMarker.openPopup();
+      return;
+    }
+    
+    // Create a schedule-like object for the selected location
+    const scheduleForLocation = {
+      ...schedules.find(s => s.id === location.scheduleId),
+      street_name: location.street,
+      barangay_name: location.barangay,
+      latitude: location.lat,
+      longitude: location.lng
+    };
+    
+    setSelectedSchedule(scheduleForLocation);
+    
+    // Create red flag icon
+    const flagIcon = L.icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+
+    // Add new flag marker (keep existing ones)
+    const marker = L.marker([location.lat, location.lng], { icon: flagIcon }).addTo(mapRef.current);
+    const displayText = location.street 
+      ? `${location.street} / ${location.barangay}` 
+      : location.barangay;
+    
+    // Create popup with cancel button
+    const popupContent = `
+      <div style="text-align: center;">
+        <strong>Collection Start Point</strong><br/>
+        ${displayText}<br/>
+        <button id="remove-flag-${locationKey}" style="
+          margin-top: 0.5rem;
+          padding: 0.375rem 0.75rem;
+          background: #dc2626;
+          color: white;
+          border: none;
+          border-radius: 0.375rem;
+          cursor: pointer;
+          font-size: 0.875rem;
+          font-weight: 600;
+        ">Remove</button>
+      </div>
+    `;
+    marker.bindPopup(popupContent); // Don't auto-open popup - only show when marker is clicked
+    
+    // Add click handler for cancel button after popup is opened
+    marker.on('popupopen', () => {
+      const removeButton = document.getElementById(`remove-flag-${locationKey}`);
+      if (removeButton) {
+        removeButton.onclick = () => {
+          // Remove marker from map
+          if (mapRef.current && mapRef.current.hasLayer(marker)) {
+            mapRef.current.removeLayer(marker);
+          }
+          // Remove from flagMarkers state
+          setFlagMarkers(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(locationKey);
+            return newMap;
+          });
+          // Close popup
+          marker.closePopup();
+        };
+      }
+    });
+    
+    // Store the marker
+    setFlagMarkers(prev => {
+      const newMap = new Map(prev);
+      newMap.set(locationKey, marker);
+      return newMap;
+    });
+
+    // Pan to flag location
+    mapRef.current.flyTo([location.lat, location.lng], 16);
+  };
+
+  // Drop flag on map when Street/Barangay name is clicked
+  const handleLocationClick = () => {
+    if (!selectedSchedule || !mapRef.current) return;
+
+    // Handle array format for latitude/longitude (get first element if array)
+    let lat: number | null = null;
+    let lng: number | null = null;
+    
+    if (Array.isArray(selectedSchedule.latitude) && selectedSchedule.latitude.length > 0) {
+      lat = selectedSchedule.latitude[0];
+    } else if (typeof selectedSchedule.latitude === 'number') {
+      lat = selectedSchedule.latitude;
+    }
+    
+    if (Array.isArray(selectedSchedule.longitude) && selectedSchedule.longitude.length > 0) {
+      lng = selectedSchedule.longitude[0];
+    } else if (typeof selectedSchedule.longitude === 'number') {
+      lng = selectedSchedule.longitude;
+    }
+
+    if (!lat || !lng) {
+      console.error('Invalid coordinates:', { lat, lng, schedule: selectedSchedule });
+      return;
+    }
+
+    // Handle array format for barangay_name and street_name
+    const barangayName = Array.isArray(selectedSchedule.barangay_name) 
+      ? selectedSchedule.barangay_name[0] 
+      : selectedSchedule.barangay_name || '';
+    const streetName = Array.isArray(selectedSchedule.street_name) 
+      ? selectedSchedule.street_name[0] 
+      : selectedSchedule.street_name || '';
+
+    // Create a unique key for this location - include scheduleId to ensure uniqueness
+    const scheduleId = selectedSchedule.id || '';
+    const locationKey = `${scheduleId}-0-${lat}-${lng}-${streetName}-${barangayName}`;
+    
+    // Check if marker already exists for this location
+    const existingMarker = flagMarkers.get(locationKey);
+    if (existingMarker && mapRef.current.hasLayer(existingMarker)) {
+      // Marker already exists, just center on it and open popup
+      mapRef.current.flyTo([lat, lng], 16);
+      existingMarker.openPopup();
+      return;
+    }
+
+    // Create red flag icon
+    const flagIcon = L.icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+
+    // Add new flag marker (keep existing ones)
+    const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current);
+    const displayText = streetName 
+      ? `${streetName} / ${barangayName}` 
+      : barangayName;
+    
+    // Create popup with cancel button
+    const popupContent = `
+      <div style="text-align: center;">
+        <strong>Collection Start Point</strong><br/>
+        ${displayText}<br/>
+        <button id="remove-flag-${locationKey}" style="
+          margin-top: 0.5rem;
+          padding: 0.375rem 0.75rem;
+          background: #dc2626;
+          color: white;
+          border: none;
+          border-radius: 0.375rem;
+          cursor: pointer;
+          font-size: 0.875rem;
+          font-weight: 600;
+        ">Remove</button>
+      </div>
+    `;
+    marker.bindPopup(popupContent); // Don't auto-open popup - only show when marker is clicked
+    
+    // Add click handler for cancel button after popup is opened
+    marker.on('popupopen', () => {
+      const removeButton = document.getElementById(`remove-flag-${locationKey}`);
+      if (removeButton) {
+        removeButton.onclick = () => {
+          // Remove marker from map
+          if (mapRef.current && mapRef.current.hasLayer(marker)) {
+            mapRef.current.removeLayer(marker);
+          }
+          // Remove from flagMarkers state
+          setFlagMarkers(prev => {
+            const newMap = new Map(prev);
+            newMap.delete(locationKey);
+            return newMap;
+          });
+          // Close popup
+          marker.closePopup();
+        };
+      }
+    });
+    
+    // Store the marker (update both flagMarker for backward compatibility and flagMarkers for multiple markers)
+    setFlagMarker(marker);
+    setFlagMarkers(prev => {
+      const newMap = new Map(prev);
+      newMap.set(locationKey, marker);
+      return newMap;
+    });
+
+    // Pan to flag location (use flyTo for smoother animation)
+    mapRef.current.flyTo([lat, lng], 16);
+  };
+
+  // Auto-place flags for the selected day's schedule using temporary storage
+  const autoPlaceFlagsForSelectedDay = () => {
+    if (!mapRef.current) {
+      console.log('Map not ready yet, retrying...');
+      setTimeout(() => autoPlaceFlagsForSelectedDay(), 200);
+      return;
+    }
+    
+    // Use selected day
+    if (!selectedDay) {
+      console.log('No day selected, cannot place flags');
+      return;
+    }
+    
+    const dayToUse = selectedDay;
+    
+    // Get locations from tempStorage first (most reliable), then fallback to dayLocations
+    const locationsFromTemp = tempStorage.get(dayToUse) || [];
+    const locations = locationsFromTemp.length > 0 ? locationsFromTemp : dayLocations;
+    
+    console.log(`Auto-placing flags for ${dayToUse}:`, locations);
+    console.log('dayLocations count:', dayLocations.length);
+    console.log('tempStorage for', dayToUse, ':', locationsFromTemp.length, 'locations');
+    console.log('Full tempStorage:', Array.from(tempStorage.entries()).map(([k, v]) => [k, v.length]));
+    
+    if (locations.length === 0) {
+      console.log(`No locations found for ${dayToUse}. dayLocations:`, dayLocations, 'tempStorage:', locationsFromTemp);
+      return;
+    }
+    
+    // Create red flag icon
+    const flagIcon = L.icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
+      iconSize: [25, 41],
+      iconAnchor: [12, 41],
+      popupAnchor: [1, -34],
+      shadowSize: [41, 41]
+    });
+    
+    // Place flags for each location from temp storage (only if not already placed)
+    locations.forEach((location, index) => {
+      // Use lat and lng directly from location object - ensure they're numbers
+      const lat = Number(location.lat);
+      const lng = Number(location.lng);
+      
+      // Validate coordinates
+      if (!lat || !lng || isNaN(lat) || isNaN(lng)) {
+        console.error(`Invalid coordinates for location ${index}:`, location);
+        console.error('lat:', location.lat, 'lng:', location.lng, 'type:', typeof location.lat, typeof location.lng);
+        return;
+      }
+      
+      // Use the same key format as handleLocationSelect for consistency
+      // This ensures uniqueness even if multiple locations have same coordinates
+      const locationKey = `${location.scheduleId}-${location.locationIndex}-${lat}-${lng}-${location.street}-${location.barangay}`;
+      
+      // Skip if marker already exists
+      if (flagMarkers.has(locationKey)) {
+        console.log('Marker already exists for:', locationKey);
+        return;
+      }
+      
+      const displayText = location.street 
+        ? `${location.street} / ${location.barangay}` 
+        : location.barangay;
+      
+      console.log(`[${index + 1}/${locations.length}] Placing flag at:`, lat, lng, displayText);
+      
+      try {
+        const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current!);
+        console.log(`✓ Flag placed successfully at ${lat}, ${lng}`);
+      
+      // Create popup with cancel button (don't auto-open)
+      const popupContent = `
+        <div style="text-align: center;">
+          <strong>Collection Start Point</strong><br/>
+          ${displayText}<br/>
+          <button id="remove-flag-${locationKey}" style="
+            margin-top: 0.5rem;
+            padding: 0.375rem 0.75rem;
+            background: #dc2626;
+            color: white;
+            border: none;
+            border-radius: 0.375rem;
+            cursor: pointer;
+            font-size: 0.875rem;
+            font-weight: 600;
+          ">Remove</button>
+        </div>
+      `;
+      marker.bindPopup(popupContent); // Don't auto-open popup
+      
+      // Add click handler for cancel button
+      marker.on('popupopen', () => {
+        const removeButton = document.getElementById(`remove-flag-${locationKey}`);
+        if (removeButton) {
+          removeButton.onclick = () => {
+            if (mapRef.current && mapRef.current.hasLayer(marker)) {
+              mapRef.current.removeLayer(marker);
+            }
+            setFlagMarkers(prev => {
+              const newMap = new Map(prev);
+              newMap.delete(locationKey);
+              return newMap;
+            });
+            marker.closePopup();
+          };
+        }
+      });
+      
+        // Store the marker
+        setFlagMarkers(prev => {
+          const newMap = new Map(prev);
+          newMap.set(locationKey, marker);
+          return newMap;
+        });
+      } catch (error) {
+        console.error(`Error placing flag at ${lat}, ${lng}:`, error);
+      }
+    });
+    
+    console.log(`Finished placing flags. Total locations processed: ${locations.length}`);
+  };
+
   const requestLocationAndStart = async () => {
     // Check if we're on a secure context (HTTPS or localhost)
     if (!isSecureContext() && window.location.hostname !== 'localhost' && window.location.hostname !== '127.0.0.1') {
@@ -328,9 +978,53 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
       return;
     }
 
+    // Auto-place flags for all locations from the selected day when starting to collect
+    // Only if a day is selected and has locations in temporary storage
+    if (selectedDay && dayLocations.length > 0) {
+      setTimeout(() => {
+        autoPlaceFlagsForSelectedDay();
+      }, 100);
+    }
+
     // If truck is full, we'll empty it when route page loads
     // Don't set isFull = false here, let the route page handle it
     // This prevents the button from flickering back to "Start Collecting"
+
+    // Create ScheduleLocation if we have a selected schedule
+    let location: ScheduleLocation | undefined = undefined;
+    if (selectedSchedule) {
+      // Handle array format for latitude/longitude
+      let lat: number | null = null;
+      let lng: number | null = null;
+      
+      if (Array.isArray(selectedSchedule.latitude) && selectedSchedule.latitude.length > 0) {
+        lat = selectedSchedule.latitude[0];
+      } else if (typeof selectedSchedule.latitude === 'number') {
+        lat = selectedSchedule.latitude;
+      }
+      
+      if (Array.isArray(selectedSchedule.longitude) && selectedSchedule.longitude.length > 0) {
+        lng = selectedSchedule.longitude[0];
+      } else if (typeof selectedSchedule.longitude === 'number') {
+        lng = selectedSchedule.longitude;
+      }
+
+      if (lat && lng) {
+        // Handle array format for barangay_name and street_name
+        const barangayName = Array.isArray(selectedSchedule.barangay_name) 
+          ? selectedSchedule.barangay_name[0] 
+          : selectedSchedule.barangay_name || '';
+        const streetName = Array.isArray(selectedSchedule.street_name) 
+          ? selectedSchedule.street_name[0] 
+          : selectedSchedule.street_name || '';
+        
+        location = {
+          name: `${streetName || ''} / ${barangayName || ''}`.trim().replace(/^\/\s*|\s*\/$/g, ''),
+          lat: lat,
+          lng: lng,
+        };
+      }
+    }
 
     requestGeolocation(
       (pos) => {
@@ -339,8 +1033,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           mapRef.current.setView([latitude, longitude], 16);
         }
         // Start collecting - this will navigate to route page
+        // Pass selected day and locations so route page can place flags
         // Route page will set isFull = false and isCollecting = true
-        onStartCollecting();
+        onStartCollecting(location, selectedDay, dayLocations.length > 0 ? dayLocations : (tempStorage.get(selectedDay || '') || []));
       },
       (error) => {
         if (error instanceof GeolocationPositionError) {
@@ -368,12 +1063,12 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         >
           {/* Map section */}
           <div
+            ref={mapContainerRef}
             style={{
               position: 'absolute',
               top: '16px',
               left: '16px',
               right: '16px',
-              height: '54%',
               borderRadius: 24,
               overflow: 'hidden',
               boxShadow: '0 18px 38px rgba(15, 23, 42, 0.45)',
@@ -433,6 +1128,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
 
           {/* Bottom sheet with schedule & start button */}
           <div
+            ref={controlPanelRef}
             style={{
               position: 'absolute',
               left: 0,
@@ -449,128 +1145,492 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
             <div
               style={{
                 display: 'flex',
-              justifyContent: 'space-between',
-                alignItems: 'center',
+                flexDirection: 'column',
+                gap: '0.75rem',
                 marginBottom: '0.75rem',
               }}
             >
-              <button
-                type="button"
-                onClick={() => {
-                  if (truckIsFull) {
-                    // Continue collecting - go directly to route page
-                    onStartCollecting();
-                  } else {
-                    // Start collecting - show location prompt first
-                    setShowLocationPrompt(true);
-                  }
-                }}
+              <div
                 style={{
-                  display: 'inline-flex',
+                  display: 'flex',
+                  justifyContent: 'space-between',
                   alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.75rem 1.4rem',
-                  borderRadius: 999,
-                  border: 'none',
-                  background:
-                    'linear-gradient(135deg, #16a34a 0%, #22c55e 50%, #4ade80 100%)',
-                  color: '#ecfdf3',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                  boxShadow: '0 12px 26px rgba(22, 163, 74, 0.6)',
-                  transform: 'translateX(-4px)',
+                  position: 'relative',
                 }}
               >
-                <span
-                  style={{
-                    width: 24,
-                    height: 24,
-                    borderRadius: '999px',
-                    backgroundColor: 'rgba(22, 163, 74, 0.2)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    fontSize: '0.95rem',
-                  }}
-                >
-                  ▶
-                </span>
-                {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
-              </button>
-
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Truck No:</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{truckNo}</div>
-              </div>
-            </div>
-
-            <div style={{ marginBottom: '0.6rem', fontSize: '0.9rem', fontWeight: 600 }}>
-              Today Schedule:
-            </div>
-
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
-              {scheduleLocations.map((location) => (
                 <button
-                  key={location.name}
                   type="button"
+                  disabled={!truckIsFull && !selectedDay}
                   onClick={() => {
-                    // Drop flag on map without starting collection
-                    if (mapRef.current) {
-                      // Remove existing flag for this location if it exists
-                      const existingFlag = scheduleFlags.get(location.name);
-                      if (existingFlag) {
-                        mapRef.current.removeLayer(existingFlag);
-                        scheduleFlags.delete(location.name);
-                        setScheduleFlags(new Map(scheduleFlags));
-                      } else {
-                        // Add new flag
-                        const flagIcon = L.divIcon({
-                          html: '📍',
-                          className: 'watch-stop-icon',
-                          iconSize: [32, 32],
-                          iconAnchor: [16, 32],
-                        });
-                        const marker = L.marker([location.lat, location.lng], { icon: flagIcon }).addTo(mapRef.current);
-                        marker.bindPopup(`<div style="text-align: center; font-weight: 600; padding: 0.5rem;">📍 ${location.name}</div>`);
-                        marker.openPopup();
-                        
-                        // Center map on the flag
-                        mapRef.current.setView([location.lat, location.lng], 17);
-                        
-                        // Store flag in state
-                        const newFlags = new Map(scheduleFlags);
-                        newFlags.set(location.name, marker);
-                        setScheduleFlags(newFlags);
+                    if (truckIsFull) {
+                      // Continue collecting - auto-place flags for selected day
+                      const continueLocations = tempStorage.get(selectedDay || '') || dayLocations;
+                      if (selectedDay && continueLocations.length > 0) {
+                        console.log('Continue collecting - placing flags for:', selectedDay, 'locations:', continueLocations);
+                        setTimeout(() => {
+                          autoPlaceFlagsForSelectedDay();
+                        }, 200);
                       }
+                      // Clear the full status immediately for better UX
+                      setTruckIsFull(false);
+                      // The route page will also set isFull = false in the database
+                      // Pass selected day and locations so route page can place flags
+                      onStartCollecting(undefined, selectedDay, continueLocations);
+                    } else {
+                      // Start collecting - show location prompt first
+                      // Only proceed if a day is selected
+                      if (!selectedDay) {
+                        return;
+                      }
+                      
+                      // Clear the stopped collecting flag when starting
+                      if (onClearStoppedFlag) {
+                        onClearStoppedFlag();
+                      }
+                      
+                      // Auto-place flags BEFORE showing prompt
+                      // Get latest locations from tempStorage
+                      const currentLocations = tempStorage.get(selectedDay) || dayLocations;
+                      if (selectedDay && currentLocations.length > 0) {
+                        console.log('Auto-placing flags before location prompt, selectedDay:', selectedDay, 'locations:', currentLocations);
+                        // Ensure dayLocations is synced
+                        if (currentLocations.length > 0 && dayLocations.length === 0) {
+                          setDayLocations(currentLocations);
+                        }
+                        // Use setTimeout to ensure state is ready
+                        setTimeout(() => {
+                          autoPlaceFlagsForSelectedDay();
+                        }, 200);
+                      } else {
+                        console.log('Cannot place flags - selectedDay:', selectedDay, 'locations:', currentLocations);
+                      }
+                      
+                      setShowLocationPrompt(true);
                     }
                   }}
                   style={{
-                    width: '100%',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: '0.5rem',
+                    padding: '0.75rem 1.4rem',
                     borderRadius: 999,
                     border: 'none',
-                    padding: '0.9rem 1.2rem',
-                    backgroundColor: scheduleFlags.has(location.name) ? '#22c55e' : '#16a34a',
-                    color: '#ffffff',
-                    fontWeight: 600,
-                    fontSize: '0.8rem',
-                    textAlign: 'center',
-                    boxShadow: '0 10px 22px rgba(22,163,74,0.45)',
-                    cursor: 'pointer',
-                    transition: 'transform 0.2s, box-shadow 0.2s',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(22,163,74,0.55)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 10px 22px rgba(22,163,74,0.45)';
+                    background: (!truckIsFull && !selectedDay)
+                      ? 'linear-gradient(135deg, #9ca3af 0%, #6b7280 50%, #4b5563 100%)'
+                      : 'linear-gradient(135deg, #16a34a 0%, #22c55e 50%, #4ade80 100%)',
+                    color: '#ecfdf3',
+                    fontWeight: 700,
+                    fontSize: '0.82rem',
+                    boxShadow: (!truckIsFull && !selectedDay)
+                      ? '0 8px 16px rgba(107, 114, 128, 0.3)'
+                      : '0 12px 26px rgba(22, 163, 74, 0.6)',
+                    whiteSpace: 'nowrap',
+                    width: 'fit-content',
+                    cursor: (!truckIsFull && !selectedDay) ? 'not-allowed' : 'pointer',
+                    pointerEvents: 'auto',
+                    zIndex: 10,
+                    position: 'relative',
+                    opacity: (!truckIsFull && !selectedDay) ? 0.6 : 1,
                   }}
                 >
-                  {scheduleFlags.has(location.name) ? '📍 ' : ''}{location.name}
+                  <span
+                    style={{
+                      width: 24,
+                      height: 24,
+                      borderRadius: '999px',
+                      backgroundColor: 'rgba(22, 163, 74, 0.2)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontSize: '0.95rem',
+                    }}
+                  >
+                    ▶
+                  </span>
+                    {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
                 </button>
-              ))}
+
+                {/* Status Badge - Centered horizontally, aligned vertically with button */}
+                {truckIsFull && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      padding: '0.4rem 0.75rem',
+                      borderRadius: 8,
+                      background: '#fee2e2',
+                      color: '#dc2626',
+                      fontSize: '0.75rem',
+                      fontWeight: 600,
+                      boxShadow: '0 2px 4px rgba(220, 38, 38, 0.2)',
+                      whiteSpace: 'nowrap',
+                      display: 'flex',
+                      alignItems: 'center',
+                      pointerEvents: 'none', // Don't block clicks
+                      zIndex: 1,
+                    }}
+                  >
+                    Status: Full
+                  </div>
+                )}
+
+                <div style={{ textAlign: 'right', marginLeft: '1rem' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#6b7280' }}>Truck No:</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600 }}>{truckNo}</div>
+                </div>
+              </div>
+
+              {/* Location Buttons - Show all locations for selected day from temp storage */}
+              {selectedDay && (tempStorage.get(selectedDay) || dayLocations).length > 0 && (
+                <div
+                  style={{
+                    marginTop: '0.75rem',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '0.5rem',
+                  }}
+                >
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                    Locations for {selectedDay}:
+                  </div>
+                  {(tempStorage.get(selectedDay) || dayLocations).map((location, index) => {
+                    const displayText = location.street 
+                      ? `${location.street} / ${location.barangay}` 
+                      : location.barangay;
+                    
+                    return (
+                      <div
+                        key={index}
+                        style={{
+                          display: 'flex',
+                          gap: '0.5rem',
+                          alignItems: 'center',
+                        }}
+                      >
+                        <button
+                          type="button"
+                          onClick={() => handleLocationSelect(location)}
+                          style={{
+                            flex: 1,
+                            padding: '0.75rem 1rem',
+                            borderRadius: 12,
+                            border: '2px solid #6366f1',
+                            background: 'white',
+                            color: '#6366f1',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s ease',
+                            textAlign: 'left',
+                            boxShadow: '0 2px 4px rgba(99, 102, 241, 0.1)',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#6366f1';
+                            e.currentTarget.style.color = '#ffffff';
+                            e.currentTarget.style.transform = 'scale(1.02)';
+                            e.currentTarget.style.boxShadow = '0 4px 8px rgba(99, 102, 241, 0.3)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = 'white';
+                            e.currentTarget.style.color = '#6366f1';
+                            e.currentTarget.style.transform = 'scale(1)';
+                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(99, 102, 241, 0.1)';
+                          }}
+                        >
+                          {displayText}
+                        </button>
+                        {/* DONE button only shows after stopping collection */}
+                        {hasStoppedCollecting && (
+                          <button
+                            type="button"
+                            onClick={() => handleLocationDone(location)}
+                            style={{
+                              padding: '0.75rem 1.25rem',
+                              borderRadius: 12,
+                              border: '2px solid #22c55e',
+                              background: '#22c55e',
+                              color: 'white',
+                              fontWeight: 700,
+                              fontSize: '0.875rem',
+                              cursor: 'pointer',
+                              transition: 'all 0.2s ease',
+                              whiteSpace: 'nowrap',
+                              boxShadow: '0 2px 4px rgba(34, 197, 94, 0.3)',
+                            }}
+                            onMouseEnter={(e) => {
+                              e.currentTarget.style.background = '#16a34a';
+                              e.currentTarget.style.borderColor = '#16a34a';
+                              e.currentTarget.style.transform = 'scale(1.05)';
+                              e.currentTarget.style.boxShadow = '0 4px 8px rgba(34, 197, 94, 0.4)';
+                            }}
+                            onMouseLeave={(e) => {
+                              e.currentTarget.style.background = '#22c55e';
+                              e.currentTarget.style.borderColor = '#22c55e';
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.boxShadow = '0 2px 4px rgba(34, 197, 94, 0.3)';
+                            }}
+                          >
+                            DONE
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Schedule Location Display */}
+              {selectedSchedule && (!selectedDay || dayLocations.length === 0) && (
+                <div
+                  onClick={handleLocationClick}
+                  style={{
+                    marginTop: '0.75rem',
+                    padding: '0.75rem 1rem',
+                    borderRadius: 12,
+                    background: 'white',
+                    border: '2px solid #6366f1',
+                    cursor: 'pointer',
+                    transition: 'all 0.2s ease',
+                    boxShadow: '0 2px 8px rgba(99, 102, 241, 0.2)',
+                  }}
+                  onMouseEnter={(e) => {
+                    e.currentTarget.style.background = '#f0f4ff';
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = 'white';
+                    e.currentTarget.style.transform = 'scale(1)';
+                  }}
+                >
+                  <div style={{ fontSize: '0.75rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                    Collection Location:
+                  </div>
+                  <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#1f2937' }}>
+                    {(() => {
+                      const streetName = Array.isArray(selectedSchedule.street_name) 
+                        ? selectedSchedule.street_name[0] 
+                        : selectedSchedule.street_name || '';
+                      const barangayName = Array.isArray(selectedSchedule.barangay_name) 
+                        ? selectedSchedule.barangay_name[0] 
+                        : selectedSchedule.barangay_name || '';
+                      return streetName ? `${streetName} / ${barangayName}` : barangayName || 'Location';
+                    })()}
+                  </div>
+                  <div style={{ fontSize: '0.7rem', color: '#9ca3af', marginTop: '0.25rem' }}>
+                    Click to drop flag on map
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => setShowSchedulePanel(!showSchedulePanel)}
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  padding: '0.75rem 1.2rem',
+                  borderRadius: 999,
+                  border: 'none',
+                  background: showSchedulePanel
+                    ? 'linear-gradient(135deg, #4f46e5 0%, #6366f1 50%, #818cf8 100%)'
+                    : 'linear-gradient(135deg, #6366f1 0%, #818cf8 50%, #a5b4fc 100%)',
+                  color: '#ffffff',
+                  fontWeight: 700,
+                  fontSize: '0.82rem',
+                  boxShadow: showSchedulePanel
+                    ? '0 12px 26px rgba(79, 70, 229, 0.6)'
+                    : '0 8px 20px rgba(99, 102, 241, 0.4)',
+                  transition: 'all 0.3s ease',
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                  width: 'fit-content',
+                }}
+                onMouseEnter={(e) => {
+                  if (!showSchedulePanel) {
+                    e.currentTarget.style.transform = 'scale(1.02)';
+                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(99, 102, 241, 0.5)';
+                  }
+                }}
+                onMouseLeave={(e) => {
+                  if (!showSchedulePanel) {
+                    e.currentTarget.style.transform = 'scale(1)';
+                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(99, 102, 241, 0.4)';
+                  }
+                }}
+              >
+                📅 Schedule
+              </button>
             </div>
+
+            {/* Schedule Panel */}
+            {showSchedulePanel && (
+              <>
+                {/* Backdrop */}
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: 'rgba(0, 0, 0, 0.5)',
+                    zIndex: 999,
+                  }}
+                  onClick={() => {
+                    setShowSchedulePanel(false);
+                    setSelectedDay(null);
+                    setDayLocations([]);
+                  }}
+                />
+                {/* Panel */}
+                <div
+                  style={{
+                    position: 'fixed',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '90%',
+                    maxWidth: '400px',
+                    padding: '1.25rem',
+                    borderRadius: 16,
+                    background: 'white',
+                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.1)',
+                    border: '1px solid #e5e7eb',
+                    zIndex: 1000,
+                  }}
+                >
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    marginBottom: '1rem',
+                  }}
+                >
+                  <h3
+                    style={{
+                      fontSize: '1rem',
+                      fontWeight: 700,
+                      color: '#1f2937',
+                      margin: 0,
+                    }}
+                  >
+                    Weekly Schedule
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowSchedulePanel(false);
+                      setSelectedDay(null);
+                      setDayLocations([]);
+                    }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '1.5rem',
+                      color: '#6b7280',
+                      cursor: 'pointer',
+                      padding: '0.25rem',
+                      lineHeight: 1,
+                      transition: 'color 0.2s',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.color = '#1f2937';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.color = '#6b7280';
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+                {/* Always show day buttons in the panel */}
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(3, 1fr)',
+                    gap: '0.75rem',
+                  }}
+                >
+                    {daysOfWeek.map((day) => {
+                      const isScheduled = isDayScheduled(day);
+                      const isSelected = selectedDay === day;
+                      
+                      // Check if another day is selected and has pending locations
+                      // Disable this button if:
+                      // 1. It's not scheduled, OR
+                      // 2. Another day is selected AND has locations that haven't been marked as done
+                      const hasPendingLocations = selectedDay && selectedDay !== day && (dayLocations.length > 0 || (tempStorage.get(selectedDay)?.length || 0) > 0);
+                      const isDisabled = !isScheduled || hasPendingLocations;
+                      
+                      return (
+                        <button
+                          key={day}
+                          type="button"
+                          onClick={() => handleDayClick(day)}
+                          disabled={isDisabled}
+                          style={{
+                            padding: '1rem',
+                            borderRadius: 12,
+                            border: 'none',
+                            background: isScheduled && !hasPendingLocations
+                              ? isSelected
+                                ? 'linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)'
+                                : 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)'
+                              : '#e5e7eb',
+                            color: isScheduled && !hasPendingLocations ? '#ffffff' : '#9ca3af',
+                            fontWeight: 600,
+                            fontSize: '0.875rem',
+                            cursor: isScheduled && !hasPendingLocations ? 'pointer' : 'not-allowed',
+                            transition: 'all 0.2s ease',
+                            boxShadow: isScheduled && !hasPendingLocations
+                              ? isSelected
+                                ? '0 4px 12px rgba(79, 70, 229, 0.3)'
+                                : '0 2px 8px rgba(22, 163, 74, 0.3)'
+                              : 'none',
+                            transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                            opacity: isScheduled && !hasPendingLocations ? 1 : 0.6,
+                            position: 'relative',
+                          }}
+                          onMouseEnter={(e) => {
+                            if (isScheduled && !isSelected && !hasPendingLocations) {
+                              e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)';
+                              e.currentTarget.style.transform = 'scale(1.05)';
+                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(22, 163, 74, 0.4)';
+                            }
+                          }}
+                          onMouseLeave={(e) => {
+                            if (isScheduled && !isSelected && !hasPendingLocations) {
+                              e.currentTarget.style.background = 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)';
+                              e.currentTarget.style.transform = 'scale(1)';
+                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(22, 163, 74, 0.3)';
+                            }
+                          }}
+                        >
+                          {day}
+                          {isScheduled && (
+                            <span
+                              style={{
+                                position: 'absolute',
+                                top: '0.5rem',
+                                right: '0.5rem',
+                                width: '8px',
+                                height: '8px',
+                                borderRadius: '50%',
+                                background: '#93c5fd',
+                                boxShadow: '0 0 8px rgba(147, 197, 253, 0.8), 0 0 12px rgba(147, 197, 253, 0.6), 0 1px 3px rgba(0,0,0,0.2)',
+                              }}
+                            />
+                          )}
+                        </button>
+                      );
+                      })}
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

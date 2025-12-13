@@ -1,0 +1,31 @@
+.reports-page {
+  max-width: 100%;
+}
+
+.issue-content {
+  max-width: 300px;
+}
+
+.issue-content strong {
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.issue-content small {
+  color: var(--text-light);
+  font-size: 0.75rem;
+}
+
+.status-select {
+  padding: 0.25rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  font-size: 0.875rem;
+}
+
+.status-select:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+
+

@@ -201,11 +201,9 @@ const SignUpPage: React.FC = () => {
       return;
     }
 
-    // Phone number validation - must be exactly 11 digits and start with 09
-    const phoneDigits = phoneNumber.replace(/\D/g, '');
-    const phoneRegex = /^09[0-9]{9}$/;
-    if (!phoneRegex.test(phoneDigits)) {
-      setAlertMessage('Please enter a valid 11-digit phone number starting with 09');
+    // Phone number validation - must be exactly 9 digits (after "09")
+    if (!phoneNumber || phoneNumber.length !== 9) {
+      setAlertMessage('Please enter a complete 11-digit phone number');
       setShowAlert(true);
       setIsLoading(false);
       return;
@@ -303,6 +301,7 @@ const SignUpPage: React.FC = () => {
       }
 
       // Create account in Supabase
+      // Note: registrationStatus will be automatically set to 'pending' for collectors in createAccount
       await databaseService.createAccount({
         email: email.toLowerCase().trim(),
         username: username.trim(),
@@ -312,20 +311,24 @@ const SignUpPage: React.FC = () => {
         truckNo: role === 'collector' ? truckNo : undefined,
         address: address.trim(),
         barangay: barangay.trim(),
-        phoneNumber: phoneNumber.replace(/\D/g, '').slice(0, 11),
+        phoneNumber: '09' + phoneNumber.replace(/\D/g, '').slice(0, 9), // Prepend "09" to the 9 digits
       });
 
       // Clear OTP data
       localStorage.removeItem('signup_otp');
 
       // Success - redirect to login
-      setAlertMessage('Account created successfully! Please log in.');
+      if (role === 'collector') {
+        setAlertMessage('Account created successfully! Your registration is pending approval. You will receive an email once approved.');
+      } else {
+        setAlertMessage('Account created successfully! Please log in.');
+      }
       setShowAlert(true);
       
       // Redirect after alert is dismissed
       setTimeout(() => {
         history.push('/login');
-      }, 1500);
+      }, 3000);
     } catch (error: any) {
       setAlertMessage(error.message || 'Failed to create account. Please try again.');
       setShowAlert(true);
@@ -680,45 +683,47 @@ const SignUpPage: React.FC = () => {
 
                 <IonItem
                   lines="none"
-                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                  style={{ marginBottom: '0.9rem', borderRadius: 14, '--background': '#f9fafb', position: 'relative' } as any}
                 >
                   <IonLabel position="stacked">Phone Number</IonLabel>
-                  <IonInput 
-                    required 
-                    type="tel"
-                    inputMode="numeric"
-                    value={phoneNumber} 
-                    onIonInput={(e) => {
-                      // Only allow digits and limit to 11 digits - remove any non-numeric characters
-                      let value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 11);
-                      
-                      // Ensure it starts with 09 - if user types something else, auto-correct
-                      if (value.length === 1 && value !== '0') {
-                        value = '0';
-                      } else if (value.length === 2 && value[0] === '0' && value[1] !== '9') {
-                        value = '09';
-                      } else if (value.length >= 2 && value[0] !== '0') {
-                        // If first digit is not 0, replace with 0
-                        value = '0' + value.slice(1, 11);
-                      } else if (value.length >= 2 && value[0] === '0' && value[1] !== '9') {
-                        // If second digit is not 9, replace with 9
-                        value = '09' + value.slice(2, 11);
-                      }
-                      
-                      setPhoneNumber(value);
-                    }}
-                    onKeyDown={(e) => {
-                      // Prevent non-numeric keys (except backspace, delete, tab, arrow keys)
-                      const key = e.key;
-                      if (!/[0-9]/.test(key) && 
-                          !['Backspace', 'Delete', 'Tab', 'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(key) &&
-                          !(e.ctrlKey || e.metaKey)) {
-                        e.preventDefault();
-                      }
-                    }}
-                    placeholder="09xxxxxxxxx (must start with 09)" 
-                    maxlength={11}
-                  />
+                  <div style={{ position: 'relative', width: '100%' }}>
+                    <span style={{
+                      position: 'absolute',
+                      left: '0.75rem',
+                      top: '50%',
+                      transform: 'translateY(-50%)',
+                      color: '#111827',
+                      fontWeight: '500',
+                      pointerEvents: 'none',
+                      userSelect: 'none',
+                      zIndex: 1,
+                      fontSize: '1rem'
+                    }}>
+                      09
+                    </span>
+                    <IonInput 
+                      required 
+                      type="tel"
+                      inputMode="numeric"
+                      value={phoneNumber} 
+                      onIonInput={(e) => {
+                        // Only allow digits, max 9 characters (after "09")
+                        const value = e.detail.value!.replace(/[^0-9]/g, '').slice(0, 9);
+                        setPhoneNumber(value);
+                      }}
+                      placeholder="XXXXXXXXX" 
+                      maxlength={9}
+                      style={{
+                        '--padding-start': '2.5rem',
+                        '--padding-end': '0.75rem',
+                      } as any}
+                    />
+                  </div>
+                  {phoneNumber && phoneNumber.length < 9 && (
+                    <IonText style={{ fontSize: '0.75rem', color: '#ef4444', padding: '0.25rem 0.5rem', display: 'block' }}>
+                      Phone number must be 11 digits
+                    </IonText>
+                  )}
                 </IonItem>
 
                 <IonItem
