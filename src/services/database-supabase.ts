@@ -992,6 +992,84 @@ class SupabaseDatabaseService {
   }
 
   /**
+   * Get collection schedules by barangay name and day
+   */
+  async getSchedulesByBarangayAndDay(barangayName: string, dayAbbr: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*')
+      .contains('days', [dayAbbr]);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data) return [];
+
+    // Filter by barangay name (can be in array or string)
+    return data.filter(schedule => {
+      const scheduleBarangayNames = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name 
+        : schedule.barangay_name ? [schedule.barangay_name] : [];
+      
+      return scheduleBarangayNames.some((name: string) => 
+        name && name.toLowerCase().includes(barangayName.toLowerCase()) ||
+        barangayName.toLowerCase().includes(name?.toLowerCase() || '')
+      );
+    });
+  }
+
+  /**
+   * Get all collection schedules by barangay (for all days)
+   */
+  async getSchedulesByBarangay(barangayName: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*');
+
+    if (error) {
+      console.error('Error fetching schedules:', error);
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      console.log('No schedules found in database');
+      return [];
+    }
+
+    console.log(`Filtering ${data.length} schedules for barangay: ${barangayName}`);
+
+    // Filter by barangay name (can be in array or string)
+    const filtered = data.filter(schedule => {
+      const scheduleBarangayNames = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name 
+        : schedule.barangay_name ? [schedule.barangay_name] : [];
+      
+      // Normalize both names for comparison
+      const normalizedResidentBarangay = barangayName.toLowerCase().trim();
+      
+      const matches = scheduleBarangayNames.some((name: string) => {
+        if (!name) return false;
+        const normalizedScheduleBarangay = name.toLowerCase().trim();
+        
+        // Check for exact match or substring match
+        return normalizedScheduleBarangay === normalizedResidentBarangay ||
+               normalizedScheduleBarangay.includes(normalizedResidentBarangay) ||
+               normalizedResidentBarangay.includes(normalizedScheduleBarangay);
+      });
+      
+      if (matches) {
+        console.log(`Match found: schedule barangay(s): ${scheduleBarangayNames.join(', ')}, resident barangay: ${barangayName}`);
+      }
+      
+      return matches;
+    });
+
+    console.log(`Found ${filtered.length} matching schedules`);
+    return filtered;
+  }
+
+  /**
    * Remove a location from a collection schedule by removing the item at the specified index
    * from street_name, barangay_name, latitude, and longitude arrays
    */

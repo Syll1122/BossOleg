@@ -54,14 +54,19 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [selectedSchedule, setSelectedSchedule] = useState<any | null>(null);
   const [flagMarker, setFlagMarker] = useState<L.Marker | null>(null);
   const [flagMarkers, setFlagMarkers] = useState<Map<string, L.Marker>>(new Map()); // Store multiple markers by location key
-  const [dayLocations, setDayLocations] = useState<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>([]);
+  const [dayLocations, setDayLocations] = useState<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}>>([]);
   // Temporary storage organized by day: Map<day, Array<locations>>
-  const [tempStorage, setTempStorage] = useState<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>>(new Map());
+  const [tempStorage, setTempStorage] = useState<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}>>>(new Map());
+  const [routePolylines, setRoutePolylines] = useState<Map<string, L.Polyline>>(new Map()); // Store route polylines by schedule ID
+  const routePolylinesRef = useRef<Map<string, L.Polyline>>(new Map()); // Ref to access current polylines in event handlers
+  const [viewingDay, setViewingDay] = useState<string | null>(null); // Track which day is being viewed
+  const [highlightedPolylineId, setHighlightedPolylineId] = useState<string | null>(null); // Track which polyline is currently highlighted (green)
+  const highlightedPolylineIdRef = useRef<string | null>(null); // Ref to access current highlighted ID in event handlers
   
   // Use refs to persist selectedDay and dayLocations across renders (especially for mobile React batching issues)
   const selectedDayRef = useRef<string | null>(null);
-  const dayLocationsRef = useRef<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>([]);
-  const tempStorageRef = useRef<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}>>>(new Map());
+  const dayLocationsRef = useRef<Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}>>([]);
+  const tempStorageRef = useRef<Map<string, Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}>>>(new Map());
   
   // Sync refs with state to ensure persistence on mobile
   // Always update refs regardless of value to prevent clearing on mobile re-renders
@@ -195,6 +200,29 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     
     return () => clearInterval(statusInterval);
   }, []);
+
+  // Auto-load today's schedule when schedules are loaded and no day is selected
+  useEffect(() => {
+    if (schedules.length > 0 && !selectedDay && !selectedDayRef.current) {
+      const today = getTodayDay();
+      const dayAbbr = dayAbbreviations[today];
+      const isTodayScheduled = schedules.some(schedule => 
+        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+      );
+      
+      if (isTodayScheduled) {
+        const todaySchedules = schedules.filter(schedule => 
+          schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+        );
+        
+        if (todaySchedules.length > 0) {
+          // Auto-select today's schedule
+          handleDayClick(today).catch(err => console.error('Error auto-loading today schedule:', err));
+        }
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [schedules.length]);
 
   // Load locations when stopping collection - use selectedDay from stack if available
   useEffect(() => {
@@ -447,26 +475,80 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     return null;
   };
 
-  // Extract all locations from a schedule (handles arrays)
-  const extractLocationsFromSchedule = (schedule: any): Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> => {
-    const locations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+  // Get today's day name
+  const getTodayDay = (): string => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    return days[new Date().getDay()];
+  };
+
+  // Get tomorrow's day name (actual next day, not scheduled)
+  const getTomorrowDay = (): string | null => {
+    const today = getTodayDay();
+    const todayIndex = daysOfWeek.indexOf(today);
+    
+    if (todayIndex === -1) return null; // Today not found in daysOfWeek
+    
+    // Get next day in the week
+    const tomorrowIndex = (todayIndex + 1) % daysOfWeek.length;
+    return daysOfWeek[tomorrowIndex];
+  };
+
+  // Extract all locations from a schedule (handles arrays and route polylines)
+  const extractLocationsFromSchedule = (schedule: any): Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}> => {
+    const locations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}> = [];
     
     console.log('Extracting locations from schedule:', schedule);
     
-    // Handle arrays for street_name, barangay_name, latitude, longitude
+    // Handle arrays for street_name, street_ids, barangay_name, latitude, longitude
     const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : (schedule.street_name ? [schedule.street_name] : []);
+    const streetIds = Array.isArray(schedule.street_ids) ? schedule.street_ids : (schedule.street_ids ? [schedule.street_ids] : []);
     const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : (schedule.barangay_name ? [schedule.barangay_name] : []);
     const latitudes = Array.isArray(schedule.latitude) ? schedule.latitude : (schedule.latitude !== null && schedule.latitude !== undefined ? [schedule.latitude] : []);
     const longitudes = Array.isArray(schedule.longitude) ? schedule.longitude : (schedule.longitude !== null && schedule.longitude !== undefined ? [schedule.longitude] : []);
     
-    console.log('Parsed arrays:', { streetNames, barangayNames, latitudes, longitudes });
+    console.log('Parsed arrays:', { streetNames, streetIds, barangayNames, latitudes, longitudes });
     
-    // Get the maximum length to iterate
-    const maxLength = Math.max(streetNames.length, barangayNames.length, latitudes.length, longitudes.length, 1);
+    // Check if this is a route (multiple coordinates forming a polyline)
+    const isRoute = latitudes.length > 1 && longitudes.length > 1;
+    
+    if (isRoute) {
+      // This is a route polyline - create route coordinates
+      const routeCoordinates: [number, number][] = [];
+      for (let i = 0; i < Math.min(latitudes.length, longitudes.length); i++) {
+        const lat = Number(latitudes[i]);
+        const lng = Number(longitudes[i]);
+        if (!isNaN(lat) && !isNaN(lng)) {
+          routeCoordinates.push([lat, lng]);
+        }
+      }
+      
+      if (routeCoordinates.length > 0) {
+        // For routes, create one location entry with route coordinates
+        const street = streetNames[0] || '';
+        const streetId = streetIds[0] || '';
+        const barangay = barangayNames[0] || '';
+        
+        locations.push({
+          street: street,
+          barangay: barangay,
+          lat: routeCoordinates[0][0], // Start point
+          lng: routeCoordinates[0][1],
+          scheduleId: schedule.id || '',
+          locationIndex: 0,
+          streetId: streetId,
+          routeCoordinates: routeCoordinates
+        });
+      }
+      return locations;
+    }
+    
+    // Not a route - handle as individual points
+    const maxLength = Math.max(streetNames.length, streetIds.length, barangayNames.length, latitudes.length, longitudes.length, 1);
     
     // If no arrays found, try to create at least one location from single values
     if (maxLength === 0) {
       const street = schedule.street_name || '';
+      const streetId = schedule.street_ids || '';
       const barangay = schedule.barangay_name || '';
       const lat = schedule.latitude;
       const lng = schedule.longitude;
@@ -478,7 +560,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           lat: Number(lat),
           lng: Number(lng),
           scheduleId: schedule.id || '',
-          locationIndex: 0
+          locationIndex: 0,
+          streetId: streetId || undefined
         });
       }
       return locations;
@@ -487,6 +570,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     // Create location entries for each index
     for (let i = 0; i < maxLength; i++) {
       const street = streetNames[i] || '';
+      const streetId = streetIds[i] || '';
       const barangay = barangayNames[i] || (barangayNames[0] || '');
       const lat = latitudes[i] !== null && latitudes[i] !== undefined ? Number(latitudes[i]) : (latitudes[0] !== null && latitudes[0] !== undefined ? Number(latitudes[0]) : null);
       const lng = longitudes[i] !== null && longitudes[i] !== undefined ? Number(longitudes[i]) : (longitudes[0] !== null && longitudes[0] !== undefined ? Number(longitudes[0]) : null);
@@ -498,7 +582,8 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
           lat: lat,
           lng: lng,
           scheduleId: schedule.id || '',
-          locationIndex: i
+          locationIndex: i,
+          streetId: streetId || undefined
         });
       }
     }
@@ -524,9 +609,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         // Clear previous selected schedule
         setSelectedSchedule(null);
         setSelectedDay(day);
+        setViewingDay(day);
         
         // Extract all locations from all schedules for this day
-        const allLocations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}> = [];
+        const allLocations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}> = [];
         daySchedules.forEach(schedule => {
           const locations = extractLocationsFromSchedule(schedule);
           allLocations.push(...locations);
@@ -566,6 +652,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         dayLocationsRef.current = allLocations;
         selectedDayRef.current = day;
         
+        // Render route polylines on map if viewing today's schedule
+        renderRoutePolylines(day, daySchedules);
+        
         // Close the panel so locations show below Start Collecting button
         setShowSchedulePanel(false);
       } else {
@@ -588,6 +677,110 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     } catch (error) {
       console.error('Error in handleDayClick:', error);
     }
+  };
+
+  // Render route polylines on map for a specific day
+  const renderRoutePolylines = (day: string, daySchedules: any[]) => {
+    if (!mapRef.current) return;
+    
+    // Clear existing polylines first
+    routePolylinesRef.current.forEach((polyline) => {
+      if (mapRef.current && mapRef.current.hasLayer(polyline)) {
+        mapRef.current.removeLayer(polyline);
+      }
+    });
+    routePolylinesRef.current.clear();
+    setRoutePolylines(new Map(routePolylinesRef.current));
+    highlightedPolylineIdRef.current = null;
+    setHighlightedPolylineId(null);
+    
+    // Render polylines for each schedule with route coordinates
+    daySchedules.forEach(schedule => {
+      if (schedule.latitude && schedule.longitude && 
+          Array.isArray(schedule.latitude) && Array.isArray(schedule.longitude) &&
+          schedule.latitude.length > 1 && schedule.longitude.length > 1) {
+        
+        // Create route coordinates
+        const routeCoordinates: [number, number][] = [];
+        for (let i = 0; i < Math.min(schedule.latitude.length, schedule.longitude.length); i++) {
+          const lat = Number(schedule.latitude[i]);
+          const lng = Number(schedule.longitude[i]);
+          if (!isNaN(lat) && !isNaN(lng)) {
+            routeCoordinates.push([lat, lng]);
+          }
+        }
+        
+        if (routeCoordinates.length > 1) {
+          // Create polyline with same style as admin panel (always start as blue)
+          const polyline = L.polyline(routeCoordinates, {
+            color: '#3b82f6',
+            weight: 6,
+            opacity: 0.7
+          }).addTo(mapRef.current!);
+          
+          // Add click handler to highlight/unhighlight
+          polyline.on('click', () => {
+            const currentHighlightedId = highlightedPolylineIdRef.current;
+            
+            // Revert previous highlighted polyline to blue
+            if (currentHighlightedId && currentHighlightedId !== schedule.id) {
+              const prevPolyline = routePolylinesRef.current.get(currentHighlightedId);
+              if (prevPolyline) {
+                prevPolyline.setStyle({ color: '#3b82f6' });
+              }
+            }
+            
+            // Toggle current polyline: if already highlighted, revert to blue; otherwise highlight in green
+            if (currentHighlightedId === schedule.id) {
+              polyline.setStyle({ color: '#3b82f6' });
+              highlightedPolylineIdRef.current = null;
+              setHighlightedPolylineId(null);
+            } else {
+              polyline.setStyle({ color: '#22c55e' });
+              highlightedPolylineIdRef.current = schedule.id;
+              setHighlightedPolylineId(schedule.id);
+            }
+          });
+          
+          // Add popup with schedule info
+          const streetName = Array.isArray(schedule.street_name) 
+            ? schedule.street_name[0] 
+            : schedule.street_name || 'N/A';
+          const barangayName = Array.isArray(schedule.barangay_name) 
+            ? schedule.barangay_name[0] 
+            : schedule.barangay_name || 'N/A';
+          
+          polyline.bindPopup(`
+            <strong>Route</strong><br/>
+            Street: ${streetName}<br/>
+            Barangay: ${barangayName}<br/>
+            Click to highlight
+          `);
+          
+          // Store polyline in both state and ref
+          routePolylinesRef.current.set(schedule.id, polyline);
+          setRoutePolylines(new Map(routePolylinesRef.current));
+          
+          console.log(`Route polyline rendered for schedule ${schedule.id}`);
+        }
+      }
+    });
+  };
+
+  // Clear all route polylines from map
+  const clearRoutePolylines = () => {
+    if (!mapRef.current) return;
+    
+    routePolylinesRef.current.forEach((polyline) => {
+      if (mapRef.current && mapRef.current.hasLayer(polyline)) {
+        mapRef.current.removeLayer(polyline);
+      }
+    });
+    
+    routePolylinesRef.current.clear();
+    setRoutePolylines(new Map());
+    highlightedPolylineIdRef.current = null;
+    setHighlightedPolylineId(null);
   };
 
   // Handle marking a location as DONE - remove it from temp storage only (not from database lat/lng)
@@ -723,99 +916,50 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     }
   };
 
-  // Handle location selection from day locations - place a flag when button is clicked
+  // Handle location selection from day locations - highlight polyline instead of placing marker
   const handleLocationSelect = (location: {street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number}) => {
     if (!mapRef.current) return;
     
-    // Create a unique key for this location - include scheduleId and locationIndex to ensure uniqueness
-    const locationKey = `${location.scheduleId}-${location.locationIndex}-${location.lat}-${location.lng}-${location.street}-${location.barangay}`;
+    // Get the schedule to check if it has route coordinates (polyline)
+    const schedule = schedules.find(s => s.id === location.scheduleId);
+    if (!schedule) return;
     
-    // Check if marker already exists for this location
-    const existingMarker = flagMarkers.get(locationKey);
-    if (existingMarker && mapRef.current.hasLayer(existingMarker)) {
-      // Marker already exists, just center on it
-      mapRef.current.flyTo([location.lat, location.lng], 16);
-      existingMarker.openPopup();
-      return;
-    }
+    // Check if this schedule has a route polyline
+    const polyline = routePolylinesRef.current.get(location.scheduleId);
     
-    // Create a schedule-like object for the selected location
-    const scheduleForLocation = {
-      ...schedules.find(s => s.id === location.scheduleId),
-      street_name: location.street,
-      barangay_name: location.barangay,
-      latitude: location.lat,
-      longitude: location.lng
-    };
-    
-    setSelectedSchedule(scheduleForLocation);
-    
-    // Create red flag icon
-    const flagIcon = L.icon({
-      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/0.7.7/images/marker-shadow.png',
-      iconSize: [25, 41],
-      iconAnchor: [12, 41],
-      popupAnchor: [1, -34],
-      shadowSize: [41, 41]
-    });
-
-    // Add new flag marker (keep existing ones)
-    const marker = L.marker([location.lat, location.lng], { icon: flagIcon }).addTo(mapRef.current);
-    const displayText = location.street 
-      ? `${location.street} / ${location.barangay}` 
-      : location.barangay;
-    
-    // Create popup with cancel button
-    const popupContent = `
-      <div style="text-align: center;">
-        <strong>Collection Start Point</strong><br/>
-        ${displayText}<br/>
-        <button id="remove-flag-${locationKey}" style="
-          margin-top: 0.5rem;
-          padding: 0.375rem 0.75rem;
-          background: #dc2626;
-          color: white;
-          border: none;
-          border-radius: 0.375rem;
-          cursor: pointer;
-          font-size: 0.875rem;
-          font-weight: 600;
-        ">Remove</button>
-      </div>
-    `;
-    marker.bindPopup(popupContent); // Don't auto-open popup - only show when marker is clicked
-    
-    // Add click handler for cancel button after popup is opened
-    marker.on('popupopen', () => {
-      const removeButton = document.getElementById(`remove-flag-${locationKey}`);
-      if (removeButton) {
-        removeButton.onclick = () => {
-          // Remove marker from map
-          if (mapRef.current && mapRef.current.hasLayer(marker)) {
-            mapRef.current.removeLayer(marker);
-          }
-          // Remove from flagMarkers state
-          setFlagMarkers(prev => {
-            const newMap = new Map(prev);
-            newMap.delete(locationKey);
-            return newMap;
-          });
-          // Close popup
-          marker.closePopup();
-        };
+    if (polyline && mapRef.current.hasLayer(polyline)) {
+      // Get current highlighted polyline ID
+      const currentHighlightedId = highlightedPolylineIdRef.current;
+      
+      // Revert previous highlighted polyline to blue (if different)
+      if (currentHighlightedId && currentHighlightedId !== location.scheduleId) {
+        const prevPolyline = routePolylinesRef.current.get(currentHighlightedId);
+        if (prevPolyline) {
+          prevPolyline.setStyle({ color: '#3b82f6' });
+        }
       }
-    });
-    
-    // Store the marker
-    setFlagMarkers(prev => {
-      const newMap = new Map(prev);
-      newMap.set(locationKey, marker);
-      return newMap;
-    });
-
-    // Pan to flag location
-    mapRef.current.flyTo([location.lat, location.lng], 16);
+      
+      // Toggle current polyline: if already highlighted, revert to blue; otherwise highlight in green
+      if (currentHighlightedId === location.scheduleId) {
+        polyline.setStyle({ color: '#3b82f6' });
+        highlightedPolylineIdRef.current = null;
+        setHighlightedPolylineId(null);
+      } else {
+        polyline.setStyle({ color: '#22c55e' });
+        highlightedPolylineIdRef.current = location.scheduleId;
+        setHighlightedPolylineId(location.scheduleId);
+        
+        // Pan to the route - get bounds of the polyline
+        const bounds = polyline.getBounds();
+        if (bounds.isValid()) {
+          mapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 16 });
+        }
+      }
+    } else {
+      // No polyline found - this might be a single point location
+      // Center map on the location coordinates
+      mapRef.current.flyTo([location.lat, location.lng], 16);
+    }
   };
 
   // Drop flag on map when Street/Barangay name is clicked
@@ -975,6 +1119,12 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     
     // Place flags for each location from temp storage (only if not already placed)
     locations.forEach((location, index) => {
+      // Skip if this is a route location (routes are shown as polylines, not flags)
+      if (location.routeCoordinates && location.routeCoordinates.length > 1) {
+        console.log(`Skipping flag for route location: ${location.street || location.barangay}`);
+        return;
+      }
+      
       // Use lat and lng directly from location object - ensure they're numbers
       const lat = Number(location.lat);
       const lng = Number(location.lng);
@@ -1406,9 +1556,51 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
               </button>
 
-                <div style={{ textAlign: 'right', marginLeft: '1rem' }}>
-                <div style={{ fontSize: '0.7rem', color: '#b0b0b0' }}>Truck No:</div>
-                <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{truckNo}</div>
+              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', marginLeft: 'auto' }}>
+                {/* Next Day Button - show if viewing today and tomorrow exists */}
+                {selectedDay === getTodayDay() && getTomorrowDay() && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const tomorrow = getTomorrowDay();
+                      if (tomorrow) {
+                        handleDayClick(tomorrow);
+                      }
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      padding: '0.75rem 1.2rem',
+                      borderRadius: 999,
+                      border: 'none',
+                      background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%)',
+                      color: '#ffffff',
+                      fontWeight: 700,
+                      fontSize: '0.82rem',
+                      boxShadow: '0 8px 20px rgba(245, 158, 11, 0.5)',
+                      transition: 'all 0.3s ease',
+                      cursor: 'pointer',
+                      whiteSpace: 'nowrap',
+                      width: 'fit-content',
+                    }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.transform = 'scale(1.02)';
+                      e.currentTarget.style.boxShadow = '0 12px 26px rgba(245, 158, 11, 0.6), 0 0 20px rgba(245, 158, 11, 0.3)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.transform = 'scale(1)';
+                      e.currentTarget.style.boxShadow = '0 8px 20px rgba(245, 158, 11, 0.5)';
+                    }}
+                  >
+                    ➡️ Next Day ({getTomorrowDay()})
+                  </button>
+                )}
+                
+                <div style={{ textAlign: 'right' }}>
+                  <div style={{ fontSize: '0.7rem', color: '#b0b0b0' }}>Truck No:</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{truckNo}</div>
+                </div>
               </div>
             </div>
 
@@ -1436,8 +1628,10 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     Locations for {currentDay}:
             </div>
                   {currentLocations.map((location, index) => {
-                    const displayText = location.street 
-                      ? `${location.street} / ${location.barangay}` 
+                    // Use street_id if available, otherwise use street name
+                    const streetDisplay = location.streetId || location.street || '';
+                    const displayText = streetDisplay
+                      ? `${streetDisplay} / ${location.barangay}` 
                       : location.barangay;
                     
                     return (
@@ -1699,7 +1893,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     ×
                   </button>
                 </div>
-                {/* Always show day buttons in the panel */}
+                {/* Show only today's schedule initially, but allow clicking to see other days */}
                 <div
                   style={{
                     display: 'grid',
@@ -1707,79 +1901,106 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                     gap: '0.75rem',
                   }}
                 >
-                    {daysOfWeek.map((day) => {
-                      const isScheduled = isDayScheduled(day);
-                      const isSelected = selectedDay === day;
+                    {(() => {
+                      // Filter to only show today's schedule initially
+                      const today = getTodayDay();
+                      const todayIsScheduled = isDayScheduled(today);
                       
-                      // Check if another day is selected and has pending locations
-                      // Disable this button if:
-                      // 1. It's not scheduled, OR
-                      // 2. Another day is selected AND has locations that haven't been marked as done
-                      const hasPendingLocations = selectedDay && selectedDay !== day && (dayLocations.length > 0 || (tempStorage.get(selectedDay)?.length || 0) > 0);
-                      const isDisabled = !isScheduled || hasPendingLocations;
+                      // If today is scheduled, only show today. Otherwise show all scheduled days.
+                      const daysToShow = todayIsScheduled ? [today] : daysOfWeek.filter(day => isDayScheduled(day));
                       
-                      return (
-                        <button
-                          key={day}
-                          type="button"
-                          onClick={() => handleDayClick(day)}
-                          disabled={!!isDisabled}
-                          style={{
-                            padding: '1rem',
-                            borderRadius: 12,
-                            border: 'none',
-                            background: isScheduled && !hasPendingLocations
-                              ? isSelected
-                                ? 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)'
-                                : 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)'
-                              : '#3a3a3a',
-                            color: isScheduled && !hasPendingLocations ? '#ffffff' : '#808080',
-                            fontWeight: 600,
-                            fontSize: '0.875rem',
-                            cursor: isScheduled && !hasPendingLocations ? 'pointer' : 'not-allowed',
-                            transition: 'all 0.2s ease',
-                            boxShadow: isScheduled && !hasPendingLocations
-                              ? isSelected
-                                ? '0 4px 12px rgba(59, 130, 246, 0.5), 0 0 15px rgba(59, 130, 246, 0.3)'
-                                : '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)'
-                              : 'none',
-                            transform: isSelected ? 'scale(1.02)' : 'scale(1)',
-                            opacity: isScheduled && !hasPendingLocations ? 1 : 0.6,
-                            position: 'relative',
-                          }}
-                          onMouseEnter={(e) => {
-                            if (isScheduled && !isSelected && !hasPendingLocations) {
-                              e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)';
-                              e.currentTarget.style.transform = 'scale(1.05)';
-                              e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.5), 0 0 15px rgba(34, 197, 94, 0.3)';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            if (isScheduled && !isSelected && !hasPendingLocations) {
-                              e.currentTarget.style.background = 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)';
-                              e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.boxShadow = '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)';
-                            }
-                          }}
-                        >
-                          {day}
-                          {isScheduled && (
-                            <span
-                              style={{
-                                position: 'absolute',
-                                top: '0.5rem',
-                                right: '0.5rem',
-                                width: '8px',
-                                height: '8px',
-                                borderRadius: '50%',
-                                background: '#22c55e',
-                                boxShadow: '0 0 8px rgba(34, 197, 94, 0.8), 0 0 12px rgba(34, 197, 94, 0.6), 0 1px 3px rgba(0,0,0,0.5)',
-                              }}
-                            />
-                          )}
-                        </button>
-                      );
-                      })}
+                      return daysToShow.map((day) => {
+                        const isScheduled = isDayScheduled(day);
+                        const isSelected = selectedDay === day;
+                        const isToday = day === today;
+                        
+                        // Check if another day is selected and has pending locations
+                        // Disable this button if:
+                        // 1. It's not scheduled, OR
+                        // 2. Another day is selected AND has locations that haven't been marked as done
+                        const hasPendingLocations = selectedDay && selectedDay !== day && (dayLocations.length > 0 || (tempStorage.get(selectedDay)?.length || 0) > 0);
+                        const isDisabled = !isScheduled || hasPendingLocations;
+                        
+                        return (
+                          <button
+                            key={day}
+                            type="button"
+                            onClick={() => handleDayClick(day)}
+                            disabled={!!isDisabled}
+                            style={{
+                              padding: '1rem',
+                              borderRadius: 12,
+                              border: 'none',
+                              background: isScheduled && !hasPendingLocations
+                                ? isSelected
+                                  ? 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 100%)'
+                                  : 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)'
+                                : '#3a3a3a',
+                              color: isScheduled && !hasPendingLocations ? '#ffffff' : '#808080',
+                              fontWeight: 600,
+                              fontSize: '0.875rem',
+                              cursor: isScheduled && !hasPendingLocations ? 'pointer' : 'not-allowed',
+                              transition: 'all 0.2s ease',
+                              boxShadow: isScheduled && !hasPendingLocations
+                                ? isSelected
+                                  ? '0 4px 12px rgba(59, 130, 246, 0.5), 0 0 15px rgba(59, 130, 246, 0.3)'
+                                  : '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)'
+                                : 'none',
+                              transform: isSelected ? 'scale(1.02)' : 'scale(1)',
+                              opacity: isScheduled && !hasPendingLocations ? 1 : 0.6,
+                              position: 'relative',
+                            }}
+                            onMouseEnter={(e) => {
+                              if (isScheduled && !isSelected && !hasPendingLocations) {
+                                e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #4ade80 100%)';
+                                e.currentTarget.style.transform = 'scale(1.05)';
+                                e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.5), 0 0 15px rgba(34, 197, 94, 0.3)';
+                              }
+                            }}
+                            onMouseLeave={(e) => {
+                              if (isScheduled && !isSelected && !hasPendingLocations) {
+                                e.currentTarget.style.background = 'linear-gradient(135deg, #16a34a 0%, #22c55e 100%)';
+                                e.currentTarget.style.transform = 'scale(1)';
+                                e.currentTarget.style.boxShadow = '0 2px 8px rgba(34, 197, 94, 0.4), 0 0 12px rgba(34, 197, 94, 0.2)';
+                              }
+                            }}
+                          >
+                            {day}
+                            {isToday && (
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  top: '0.25rem',
+                                  right: '0.25rem',
+                                  fontSize: '0.6rem',
+                                  background: '#f59e0b',
+                                  color: '#ffffff',
+                                  padding: '0.125rem 0.25rem',
+                                  borderRadius: 4,
+                                  fontWeight: 700,
+                                }}
+                              >
+                                TODAY
+                              </span>
+                            )}
+                            {isScheduled && (
+                              <span
+                                style={{
+                                  position: 'absolute',
+                                  top: isToday ? '1.5rem' : '0.5rem',
+                                  right: '0.5rem',
+                                  width: '8px',
+                                  height: '8px',
+                                  borderRadius: '50%',
+                                  background: '#22c55e',
+                                  boxShadow: '0 0 8px rgba(34, 197, 94, 0.8), 0 0 12px rgba(34, 197, 94, 0.6), 0 1px 3px rgba(0,0,0,0.5)',
+                                }}
+                              />
+                            )}
+                          </button>
+                        );
+                      });
+                    })()}
                   </div>
                 </div>
               </>
