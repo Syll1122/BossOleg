@@ -9,6 +9,7 @@ import MapView from '../../components/MapView';
 import { databaseService } from '../../services/database';
 import NotificationBell from '../../components/NotificationBell';
 import RefreshButton from '../../components/RefreshButton';
+import ThemeToggle from '../../components/ThemeToggle';
 import { calculateDistance, isValidCoordinate } from '../../utils/coordinates';
 import { getCurrentUserId } from '../../utils/auth';
 import { requestGeolocation } from '../../utils/geolocation';
@@ -85,8 +86,8 @@ const ResidentTruckView: React.FC = () => {
   const createTruckPopup = (truckNo: string, collectorName: string, isFull: boolean, lat: number, lng: number, isOnline: boolean = true) => {
     const popupContent = document.createElement('div');
     popupContent.style.cssText = `
-      background: #1a1a1a;
-      border: 1px solid #2a2a2a;
+      background: var(--app-surface);
+      border: 1px solid var(--app-border);
       border-radius: 12px;
       padding: 0;
       min-width: 220px;
@@ -828,7 +829,7 @@ const ResidentTruckView: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
+        <IonToolbar>
           <IonButtons slot="start">
             <IonButton 
               onClick={() => history.goBack()}
@@ -842,6 +843,7 @@ const ResidentTruckView: React.FC = () => {
           </IonButtons>
           <IonTitle>Track Truck</IonTitle>
           <IonButtons slot="end">
+            <ThemeToggle />
             <RefreshButton onRefresh={handleRefresh} variant="header" />
             <NotificationBell />
           </IonButtons>
@@ -849,7 +851,7 @@ const ResidentTruckView: React.FC = () => {
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ position: 'relative', height: '100%', background: '#0a0a0a' }}>
+        <div style={{ position: 'relative', height: '100%', background: 'var(--app-bg-primary)' }}>
           {/* Map section - full screen */}
           <div
             style={{

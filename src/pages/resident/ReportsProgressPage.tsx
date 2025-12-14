@@ -8,6 +8,7 @@ import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import { Report } from '../../models/types';
 import RefreshButton from '../../components/RefreshButton';
+import ThemeToggle from '../../components/ThemeToggle';
 
 const ReportsProgressPage: React.FC = () => {
   const history = useHistory();
@@ -98,7 +99,7 @@ const ReportsProgressPage: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
+        <IonToolbar>
           <IonButtons slot="start">
             <IonButton 
               onClick={() => history.goBack()}
@@ -112,13 +113,14 @@ const ReportsProgressPage: React.FC = () => {
           </IonButtons>
           <IonTitle>My Reports</IonTitle>
           <IonButtons slot="end">
+            <ThemeToggle />
             <RefreshButton onRefresh={handleRefresh} variant="header" />
           </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
           <div style={{ maxWidth: 600, margin: '0 auto' }}>
             {loading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '50vh' }}>
@@ -129,19 +131,19 @@ const ReportsProgressPage: React.FC = () => {
                 <IonCardContent style={{ textAlign: 'center', padding: '3rem 1.5rem' }}>
                   <IonIcon
                     icon={alertCircleOutline}
-                    style={{ fontSize: '4rem', color: '#9ca3af', marginBottom: '1rem' }}
+                    style={{ fontSize: '4rem', color: 'var(--app-text-secondary)', marginBottom: '1rem' }}
                   />
-                  <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: 600, color: '#374151' }}>
+                  <h2 style={{ margin: '0 0 0.5rem', fontSize: '1.25rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>
                     No Reports Yet
                   </h2>
-                  <p style={{ margin: 0, color: '#6b7280', fontSize: '0.9rem' }}>
+                  <p style={{ margin: 0, color: 'var(--app-text-secondary)', fontSize: '0.9rem' }}>
                     You haven't submitted any reports. Submit a report to track its progress here.
                   </p>
                 </IonCardContent>
               </IonCard>
             ) : (
               <div>
-                <h2 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700, color: '#111827' }}>
+                <h2 style={{ margin: '0 0 1.5rem', fontSize: '1.5rem', fontWeight: 700, color: 'var(--app-text-primary)' }}>
                   Report Progress
                 </h2>
                 {reports.map((report) => (
@@ -161,14 +163,14 @@ const ReportsProgressPage: React.FC = () => {
                               icon={getStatusIcon(report.status)}
                               style={{ fontSize: '1.25rem', color: `var(--ion-color-${getStatusColor(report.status)})` }}
                             />
-                            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: '#111827' }}>
+                            <h3 style={{ margin: 0, fontSize: '1rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>
                               {report.issue.length > 60 ? `${report.issue.substring(0, 60)}...` : report.issue}
                             </h3>
                           </div>
-                          <div style={{ fontSize: '0.85rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)', marginBottom: '0.25rem' }}>
                             <strong>Truck No:</strong> {report.truckNo}
                           </div>
-                          <div style={{ fontSize: '0.85rem', color: '#6b7280' }}>
+                          <div style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)' }}>
                             <strong>Barangay:</strong> {report.barangay}
                           </div>
                         </div>
@@ -180,15 +182,16 @@ const ReportsProgressPage: React.FC = () => {
                       <div
                         style={{
                           padding: '0.75rem',
-                          background: '#f9fafb',
+                          background: 'var(--app-surface-elevated)',
                           borderRadius: 8,
                           marginTop: '0.75rem',
+                          border: '1px solid var(--app-border)',
                         }}
                       >
-                        <div style={{ fontSize: '0.9rem', color: '#374151', marginBottom: '0.5rem' }}>
+                        <div style={{ fontSize: '0.9rem', color: 'var(--app-text-primary)', marginBottom: '0.5rem' }}>
                           <strong>Issue:</strong> {report.issue}
                         </div>
-                        <div style={{ fontSize: '0.8rem', color: '#6b7280' }}>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--app-text-secondary)' }}>
                           <div style={{ marginBottom: '0.25rem' }}>
                             <strong>Submitted:</strong> {formatDate(report.createdAt)}
                           </div>

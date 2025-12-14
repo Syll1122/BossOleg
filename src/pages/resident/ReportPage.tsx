@@ -9,6 +9,7 @@ import NotificationBell from '../../components/NotificationBell';
 import useCurrentUser from '../../state/useCurrentUser';
 import { getCurrentUserId } from '../../utils/auth';
 import RefreshButton from '../../components/RefreshButton';
+import ThemeToggle from '../../components/ThemeToggle';
 
 // Available trucks in the system
 const AVAILABLE_TRUCKS = [
@@ -200,7 +201,7 @@ const ReportPage: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
+        <IonToolbar>
           <IonButtons slot="start">
             <IonButton 
               onClick={() => history.goBack()}
@@ -214,6 +215,7 @@ const ReportPage: React.FC = () => {
           </IonButtons>
           <IonTitle>Report Issue</IonTitle>
           <IonButtons slot="end">
+            <ThemeToggle />
             <RefreshButton onRefresh={handleRefresh} variant="header" />
             <NotificationBell />
           </IonButtons>
@@ -221,12 +223,12 @@ const ReportPage: React.FC = () => {
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
             <div className="watch-card" style={{ padding: '1.5rem 1.4rem' }}>
               {!reportType ? (
                 <div>
-                    <h2 style={{ margin: '0 0 1rem', fontSize: '1.2rem', fontWeight: 700, color: '#ffffff' }}>How would you like to report?</h2>
+                    <h2 style={{ margin: '0 0 1rem', fontSize: '1.2rem', fontWeight: 700, color: 'var(--app-text-primary)' }}>How would you like to report?</h2>
                   
                   <button
                     type="button"
@@ -236,8 +238,8 @@ const ReportPage: React.FC = () => {
                       padding: '1rem',
                       marginBottom: '0.75rem',
                       borderRadius: 16,
-                      border: '1px solid #2a2a2a',
-                      background: '#1a1a1a',
+                      border: '1px solid var(--app-border)',
+                      background: 'var(--app-surface)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.75rem',
@@ -247,8 +249,8 @@ const ReportPage: React.FC = () => {
                   >
                     <IonIcon icon={listOutline} style={{ fontSize: '1.5rem', color: '#22c55e' }} />
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: '#ffffff' }}>Select from options</div>
-                      <div style={{ fontSize: '0.8rem', color: '#b0b0b0', marginTop: '0.25rem' }}>Choose a predefined issue</div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--app-text-primary)' }}>Select from options</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--app-text-secondary)', marginTop: '0.25rem' }}>Choose a predefined issue</div>
                     </div>
                   </button>
 
@@ -259,8 +261,8 @@ const ReportPage: React.FC = () => {
                       width: '100%',
                       padding: '1rem',
                       borderRadius: 16,
-                      border: '1px solid #2a2a2a',
-                      background: '#1a1a1a',
+                      border: '1px solid var(--app-border)',
+                      background: 'var(--app-surface)',
                       display: 'flex',
                       alignItems: 'center',
                       gap: '0.75rem',
@@ -270,8 +272,8 @@ const ReportPage: React.FC = () => {
                   >
                     <IonIcon icon={documentTextOutline} style={{ fontSize: '1.5rem', color: '#16a34a' }} />
                     <div style={{ textAlign: 'left', flex: 1 }}>
-                      <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Type your report</div>
-                      <div style={{ fontSize: '0.8rem', color: '#6b7280', marginTop: '0.25rem' }}>Describe the issue in your own words</div>
+                      <div style={{ fontWeight: 600, fontSize: '0.95rem', color: 'var(--app-text-primary)' }}>Type your report</div>
+                      <div style={{ fontSize: '0.8rem', color: 'var(--app-text-secondary)', marginTop: '0.25rem' }}>Describe the issue in your own words</div>
                     </div>
                   </button>
                 </div>
@@ -303,7 +305,7 @@ const ReportPage: React.FC = () => {
                             <IonItem
                               key={index}
                               lines="none"
-                              style={{ marginBottom: '0.5rem', borderRadius: 12, '--background': '#f9fafb' } as any}
+                              style={{ marginBottom: '0.5rem', borderRadius: 12, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                             >
                               <IonRadio slot="start" value={option} />
                               <IonLabel style={{ fontSize: '0.9rem' }}>{option}</IonLabel>
@@ -314,7 +316,7 @@ const ReportPage: React.FC = () => {
                     ) : (
                       <IonItem
                         lines="none"
-                        style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#f9fafb' } as any}
+                        style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                       >
                         <IonLabel position="stacked">Describe the issue</IonLabel>
                         <IonTextarea
@@ -331,7 +333,7 @@ const ReportPage: React.FC = () => {
                   <div style={{ position: 'relative', marginBottom: '1rem' }}>
                     <IonItem
                       lines="none"
-                      style={{ borderRadius: 14, '--background': hasAddress ? '#f3f4f6' : '#f9fafb' } as any}
+                      style={{ borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonLabel position="stacked">Barangay</IonLabel>
                       {hasAddress ? (
@@ -339,7 +341,7 @@ const ReportPage: React.FC = () => {
                           required 
                           value={barangay} 
                           readonly
-                          style={{ '--color': '#6b7280', cursor: 'not-allowed' } as any}
+                          style={{ '--color': 'var(--app-text-secondary)', cursor: 'not-allowed' } as any}
                           placeholder="Barangay from profile"
                         />
                       ) : (
@@ -389,18 +391,19 @@ const ReportPage: React.FC = () => {
                           top: '100%',
                           left: 0,
                           right: 0,
-                          backgroundColor: '#ffffff',
-                          border: '1px solid #e5e7eb',
+                          backgroundColor: 'var(--app-surface)',
+                          border: '1px solid var(--app-border)',
                           borderRadius: '14px',
                           marginTop: '4px',
                           maxHeight: '200px',
                           overflowY: 'auto',
                           zIndex: 1000,
-                          boxShadow: '0 4px 6px rgba(0, 0, 0, 0.1)',
+                          boxShadow: '0 4px 6px var(--app-shadow)',
+                          background: 'var(--app-surface)',
                         }}
                       >
                         {isLoadingBarangays ? (
-                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: 'var(--app-text-secondary)', textAlign: 'center' }}>
                             Loading barangays...
                           </div>
                         ) : filteredBarangays.length > 0 ? (
@@ -419,29 +422,29 @@ const ReportPage: React.FC = () => {
                                 style={{
                                   padding: '12px 16px',
                                   cursor: 'pointer',
-                                  borderBottom: '1px solid #f3f4f6',
-                                  backgroundColor: barangay === bg.name ? '#242424' : '#1a1a1a',
+                                  borderBottom: '1px solid var(--app-border)',
+                                  backgroundColor: barangay === bg.name ? 'var(--app-surface-elevated)' : 'var(--app-surface)',
                                 }}
                                 onMouseEnter={(e) => {
-                                  e.currentTarget.style.backgroundColor = '#242424';
+                                  e.currentTarget.style.backgroundColor = 'var(--app-surface-elevated)';
                                 }}
                                 onMouseLeave={(e) => {
-                                  e.currentTarget.style.backgroundColor = barangay === bg.name ? '#242424' : '#1a1a1a';
+                                  e.currentTarget.style.backgroundColor = barangay === bg.name ? 'var(--app-surface-elevated)' : 'var(--app-surface)';
                                 }}
                               >
-                                <IonText style={{ fontSize: '0.9rem', color: '#111827' }}>
+                                <IonText style={{ fontSize: '0.9rem', color: 'var(--app-text-primary)' }}>
                                   {bg.name}
                                 </IonText>
                               </div>
                             ))}
                             {filteredBarangays.length > 10 && (
-                              <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center', borderTop: '1px solid #f3f4f6' }}>
+                              <div style={{ padding: '8px 16px', fontSize: '0.8rem', color: 'var(--app-text-secondary)', textAlign: 'center', borderTop: '1px solid var(--app-border)' }}>
                                 Showing first 10 of {filteredBarangays.length} results. Type to narrow down.
                               </div>
                             )}
                           </>
                         ) : (
-                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: '#6b7280', textAlign: 'center' }}>
+                          <div style={{ padding: '12px 16px', fontSize: '0.9rem', color: 'var(--app-text-secondary)', textAlign: 'center' }}>
                             No barangay found. Please check your spelling.
                           </div>
                         )}

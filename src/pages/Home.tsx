@@ -24,6 +24,7 @@ import useCurrentUser from '../state/useCurrentUser';
 import NotificationBell from '../components/NotificationBell';
 import { initializeResidentNotifications, checkReportStatusChanges } from '../services/residentNotificationService';
 import RefreshButton from '../components/RefreshButton';
+import ThemeToggle from '../components/ThemeToggle';
 
 interface ScheduleItem {
   day: string;
@@ -109,15 +110,10 @@ const Home: React.FC = () => {
   return (
     <IonPage>
       <IonHeader translucent>
-        <IonToolbar
-          style={{
-            '--background': '#141414',
-            '--color': '#ffffff',
-            borderBottom: '1px solid #2a2a2a',
-          }}
-        >
+        <IonToolbar>
           <IonTitle>WATCH</IonTitle>
           <IonButtons slot="end">
+            <ThemeToggle />
             <RefreshButton onRefresh={handleRefresh} variant="header" />
             <NotificationBell />
             <IonButton 
@@ -141,7 +137,7 @@ const Home: React.FC = () => {
             flexDirection: 'column',
             alignItems: 'center',
             padding: '1.25rem 1.5rem 2rem',
-            background: '#0a0a0a',
+            background: 'var(--app-bg-primary)',
             position: 'relative',
             overflow: 'hidden',
           }}
@@ -279,8 +275,8 @@ const Home: React.FC = () => {
                 `}
               </style>
               <IonText>
-                <p style={{ margin: 0, fontSize: '0.8rem', color: '#b0b0b0' }}>Hello,</p>
-                <h2 style={{ margin: '0.15rem 0 0.6rem', fontSize: '1.4rem', color: '#ffffff' }}>
+                <p style={{ margin: 0, fontSize: '0.8rem', color: 'var(--app-text-secondary)' }}>Hello,</p>
+                <h2 style={{ margin: '0.15rem 0 0.6rem', fontSize: '1.4rem', color: 'var(--app-text-primary)' }}>
                   {user ? user.name : 'WATCH Resident'}
                 </h2>
               </IonText>
@@ -289,20 +285,20 @@ const Home: React.FC = () => {
                 style={{
                   padding: '0.9rem 1rem',
                   borderRadius: 18,
-                  backgroundColor: '#242424',
+                  backgroundColor: 'var(--app-surface-elevated)',
                   border: '1px solid rgba(34, 197, 94, 0.3)',
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(34, 197, 94, 0.05)',
+                  boxShadow: '0 4px 12px var(--app-shadow), inset 0 0 20px rgba(34, 197, 94, 0.05)',
                 }}
               >
                 <div>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
                     <IonIcon icon={calendarOutline} style={{ fontSize: '1rem', color: '#22c55e', filter: 'drop-shadow(0 0 8px rgba(34, 197, 94, 0.6))' }} />
-                    <span style={{ fontSize: '0.78rem', color: '#b0b0b0' }}>Next collection</span>
+                    <span style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>Next collection</span>
                   </div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: '#ffffff' }}>Click truck icon below to track</div>
+                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>Click truck icon below to track</div>
                 </div>
               </div>
             </div>
@@ -341,7 +337,7 @@ const Home: React.FC = () => {
                 }}
               >
                 <IonText>
-                  <h3 style={{ margin: 0, fontSize: '1rem' }}>Weekly schedule</h3>
+                  <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--app-text-primary)' }}>Weekly schedule</h3>
                 </IonText>
                 <button
                   type="button"
@@ -372,14 +368,14 @@ const Home: React.FC = () => {
                     justifyContent: 'space-between',
                     alignItems: 'center',
                     padding: '0.7rem 0',
-                    borderBottom: '1px solid #2a2a2a',
+                    borderBottom: '1px solid var(--app-border)',
                   }}
                 >
                   <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{item.day}</div>
-                    <div style={{ fontSize: '0.78rem', color: '#b0b0b0' }}>{item.street}</div>
+                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>{item.day}</div>
+                    <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#ffffff' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: 'var(--app-text-primary)' }}>
                     <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem', color: '#22c55e', filter: 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.5))' }} />
                     <span style={{ color: '#22c55e', fontWeight: 600 }}>{item.time}</span>
                   </div>
@@ -433,7 +429,7 @@ const Home: React.FC = () => {
                   }}
                 >
                   <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#22c55e', marginBottom: '0.25rem' }}>♻️</div>
-                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0' }}>Eco-Friendly</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--app-text-secondary)' }}>Eco-Friendly</div>
                 </div>
                 
                 <div
@@ -459,7 +455,7 @@ const Home: React.FC = () => {
                   }}
                 >
                   <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#3b82f6', marginBottom: '0.25rem' }}>📊</div>
-                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0' }}>Track Progress</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--app-text-secondary)' }}>Track Progress</div>
                 </div>
                 
                 <div
@@ -485,7 +481,7 @@ const Home: React.FC = () => {
                   }}
                 >
                   <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#22c55e', marginBottom: '0.25rem' }}>🌱</div>
-                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0' }}>Sustainable</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--app-text-secondary)' }}>Sustainable</div>
                 </div>
               </div>
               
@@ -512,12 +508,12 @@ const Home: React.FC = () => {
                   e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.15)';
                 }}
               >
-                <div style={{ fontSize: '0.85rem', color: '#b0b0b0', marginBottom: '0.5rem' }}>
+                <div style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)', marginBottom: '0.5rem' }}>
                   Stay connected with your collection schedule
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', alignItems: 'center' }}>
                   <span style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>💡</span>
-                  <span style={{ fontSize: '0.75rem', color: '#ffffff', fontWeight: 500 }}>
+                  <span style={{ fontSize: '0.75rem', color: 'var(--app-text-primary)', fontWeight: 500 }}>
                     Real-time tracking • Instant notifications • Easy reporting
                   </span>
                 </div>
@@ -542,16 +538,16 @@ const Home: React.FC = () => {
                 justifyContent: 'space-around',
                 padding: '0.5rem 0.75rem 0',
                 borderRadius: 999,
-                backgroundColor: '#141414',
-                border: '1px solid #2a2a2a',
-                boxShadow: '0 -6px 18px rgba(0, 0, 0, 0.5)',
+                backgroundColor: 'var(--app-bg-secondary)',
+                border: '1px solid var(--app-border)',
+                boxShadow: '0 -6px 18px var(--app-shadow-lg)',
               }}
             >
               <button
                 type="button"
                 style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #22c55e 0%, #15803d 50%, #0a0a0a 100%)',
+                  border: '2px solid #22c55e',
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -560,18 +556,18 @@ const Home: React.FC = () => {
                   fontSize: '0.7rem',
                   fontWeight: 600,
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 12px rgba(34, 197, 94, 0.3), inset 0 0 20px rgba(34, 197, 94, 0.1)',
+                  boxShadow: '0 0 20px rgba(34, 197, 94, 0.5), 0 0 40px rgba(34, 197, 94, 0.3), inset 0 0 15px rgba(34, 197, 94, 0.1)',
                   minWidth: '60px',
                 }}
               >
-                <IonIcon icon={homeOutline} style={{ fontSize: '1.3rem', color: '#ffffff', transition: 'all 0.3s ease' }} />
-                <span style={{ color: '#ffffff', marginTop: '4px', fontSize: '0.65rem', opacity: 1, transition: 'all 0.3s ease' }}>Home</span>
+                <IonIcon icon={homeOutline} style={{ fontSize: '1.3rem', color: '#22c55e', transition: 'all 0.3s ease', filter: 'drop-shadow(0 0 8px rgba(34, 197, 94, 0.8))' }} />
+                <span style={{ color: '#22c55e', marginTop: '4px', fontSize: '0.65rem', opacity: 1, transition: 'all 0.3s ease', fontWeight: 700 }}>Home</span>
               </button>
               <button
                 type="button"
                 style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)',
+                  border: '2px solid rgba(34, 197, 94, 0.4)',
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -580,51 +576,55 @@ const Home: React.FC = () => {
                   fontSize: '0.7rem',
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
                   minWidth: '60px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.15)';
+                  e.currentTarget.style.borderColor = '#22c55e';
+                  e.currentTarget.style.boxShadow = '0 0 25px rgba(34, 197, 94, 0.6), 0 0 50px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.1)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.4rem';
-                    icon.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.5))';
+                    icon.style.color = '#22c55e';
+                    icon.style.filter = 'drop-shadow(0 0 10px rgba(34, 197, 94, 0.8))';
                   }
                   if (text) {
                     text.style.opacity = '1';
                     text.style.fontSize = '0.7rem';
                     text.style.fontWeight = '700';
+                    text.style.color = '#22c55e';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.2)';
                   e.currentTarget.style.transform = 'translateY(0)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.2rem';
+                    icon.style.color = 'var(--app-text-primary)';
                     icon.style.filter = 'none';
                   }
                   if (text) {
                     text.style.opacity = '0.7';
                     text.style.fontSize = '0.65rem';
                     text.style.fontWeight = '400';
+                    text.style.color = 'var(--app-text-primary)';
                   }
                 }}
                 onClick={() => history.push('/resident/truck')}
               >
-                <IonIcon icon={busOutline} style={{ fontSize: '1.2rem', color: '#ffffff', transition: 'all 0.3s ease' }} />
-                <span style={{ color: '#ffffff', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Truck</span>
+                <IonIcon icon={busOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
+                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Truck</span>
               </button>
               <button
                 type="button"
                 style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)',
+                  border: '2px solid rgba(34, 197, 94, 0.4)',
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -633,51 +633,55 @@ const Home: React.FC = () => {
                   fontSize: '0.7rem',
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
                   minWidth: '60px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.15)';
+                  e.currentTarget.style.borderColor = '#22c55e';
+                  e.currentTarget.style.boxShadow = '0 0 25px rgba(34, 197, 94, 0.6), 0 0 50px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.1)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.4rem';
-                    icon.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.5))';
+                    icon.style.color = '#22c55e';
+                    icon.style.filter = 'drop-shadow(0 0 10px rgba(34, 197, 94, 0.8))';
                   }
                   if (text) {
                     text.style.opacity = '1';
                     text.style.fontSize = '0.7rem';
                     text.style.fontWeight = '700';
+                    text.style.color = '#22c55e';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.2)';
                   e.currentTarget.style.transform = 'translateY(0)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.2rem';
+                    icon.style.color = 'var(--app-text-primary)';
                     icon.style.filter = 'none';
                   }
                   if (text) {
                     text.style.opacity = '0.7';
                     text.style.fontSize = '0.65rem';
                     text.style.fontWeight = '400';
+                    text.style.color = 'var(--app-text-primary)';
                   }
                 }}
                 onClick={() => history.push('/resident/report')}
               >
-                <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.2rem', color: '#ffffff', transition: 'all 0.3s ease' }} />
-                <span style={{ color: '#ffffff', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Report</span>
+                <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
+                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Report</span>
               </button>
               <button
                 type="button"
                 style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)',
+                  border: '2px solid rgba(34, 197, 94, 0.4)',
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -686,51 +690,55 @@ const Home: React.FC = () => {
                   fontSize: '0.7rem',
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
                   minWidth: '60px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.15)';
+                  e.currentTarget.style.borderColor = '#22c55e';
+                  e.currentTarget.style.boxShadow = '0 0 25px rgba(34, 197, 94, 0.6), 0 0 50px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.1)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.4rem';
-                    icon.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.5))';
+                    icon.style.color = '#22c55e';
+                    icon.style.filter = 'drop-shadow(0 0 10px rgba(34, 197, 94, 0.8))';
                   }
                   if (text) {
                     text.style.opacity = '1';
                     text.style.fontSize = '0.7rem';
                     text.style.fontWeight = '700';
+                    text.style.color = '#22c55e';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.2)';
                   e.currentTarget.style.transform = 'translateY(0)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.2rem';
+                    icon.style.color = 'var(--app-text-primary)';
                     icon.style.filter = 'none';
                   }
                   if (text) {
                     text.style.opacity = '0.7';
                     text.style.fontSize = '0.65rem';
                     text.style.fontWeight = '400';
+                    text.style.color = 'var(--app-text-primary)';
                   }
                 }}
                 onClick={() => history.push('/resident/reports')}
               >
-                <IonIcon icon={documentTextOutline} style={{ fontSize: '1.2rem', color: '#ffffff', transition: 'all 0.3s ease' }} />
-                <span style={{ color: '#ffffff', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>View Reports</span>
+                <IonIcon icon={documentTextOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
+                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>View Reports</span>
               </button>
               <button
                 type="button"
                 style={{
-                  border: 'none',
-                  background: 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)',
+                  border: '2px solid rgba(34, 197, 94, 0.4)',
+                  background: 'transparent',
                   display: 'flex',
                   flexDirection: 'column',
                   alignItems: 'center',
@@ -739,45 +747,49 @@ const Home: React.FC = () => {
                   fontSize: '0.7rem',
                   cursor: 'pointer',
                   transition: 'all 0.3s ease',
-                  boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                  boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
                   minWidth: '60px',
                 }}
                 onMouseEnter={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #22c55e 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 6px 16px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.15)';
+                  e.currentTarget.style.borderColor = '#22c55e';
+                  e.currentTarget.style.boxShadow = '0 0 25px rgba(34, 197, 94, 0.6), 0 0 50px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.1)';
                   e.currentTarget.style.transform = 'translateY(-2px)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.4rem';
-                    icon.style.filter = 'drop-shadow(0 0 8px rgba(255, 255, 255, 0.5))';
+                    icon.style.color = '#22c55e';
+                    icon.style.filter = 'drop-shadow(0 0 10px rgba(34, 197, 94, 0.8))';
                   }
                   if (text) {
                     text.style.opacity = '1';
                     text.style.fontSize = '0.7rem';
                     text.style.fontWeight = '700';
+                    text.style.color = '#22c55e';
                   }
                 }}
                 onMouseLeave={(e) => {
-                  e.currentTarget.style.background = 'linear-gradient(135deg, #0a0a0a 0%, #15803d 50%, #0a0a0a 100%)';
-                  e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3)';
+                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
+                  e.currentTarget.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.2)';
                   e.currentTarget.style.transform = 'translateY(0)';
                   const icon = e.currentTarget.querySelector('ion-icon');
                   const text = e.currentTarget.querySelector('span');
                   if (icon) {
                     icon.style.fontSize = '1.2rem';
+                    icon.style.color = 'var(--app-text-primary)';
                     icon.style.filter = 'none';
                   }
                   if (text) {
                     text.style.opacity = '0.7';
                     text.style.fontSize = '0.65rem';
                     text.style.fontWeight = '400';
+                    text.style.color = 'var(--app-text-primary)';
                   }
                 }}
                 onClick={() => history.push('/resident/profile')}
               >
-                <IonIcon icon={personOutline} style={{ fontSize: '1.2rem', color: '#ffffff', transition: 'all 0.3s ease' }} />
-                <span style={{ color: '#ffffff', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Profile</span>
+                <IonIcon icon={personOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
+                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Profile</span>
               </button>
             </div>
           </div>
@@ -861,7 +873,7 @@ const Home: React.FC = () => {
       {/* Weekly Schedule Modal */}
       <IonModal isOpen={showScheduleModal} onDidDismiss={() => setShowScheduleModal(false)}>
         <IonHeader>
-          <IonToolbar style={{ '--background': '#141414', '--color': '#ffffff', borderBottom: '1px solid #2a2a2a' }}>
+          <IonToolbar>
             <IonTitle>Weekly Schedule</IonTitle>
             <IonButtons slot="end">
               <IonButton onClick={() => setShowScheduleModal(false)}>
@@ -871,7 +883,7 @@ const Home: React.FC = () => {
           </IonToolbar>
         </IonHeader>
         <IonContent>
-          <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
+          <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
             <div style={{ maxWidth: 480, margin: '0 auto' }}>
               {/* Today's Schedule */}
               {getTodaySchedules().length > 0 && (
@@ -891,11 +903,11 @@ const Home: React.FC = () => {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '0.7rem 0',
-                        borderBottom: index < getTodaySchedules().length - 1 ? '1px solid #2a2a2a' : 'none',
+                        borderBottom: index < getTodaySchedules().length - 1 ? '1px solid var(--app-border)' : 'none',
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: '#ffffff' }}>{item.street}</div>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>{item.street}</div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#22c55e' }}>
                         <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
@@ -910,7 +922,7 @@ const Home: React.FC = () => {
               <div className="watch-card" style={{ padding: '1.3rem 1.4rem' }}>
                 <div style={{ marginBottom: '1rem' }}>
                   <IonText>
-                      <h3 style={{ margin: 0, fontSize: '1rem', color: '#ffffff' }}>Full Weekly Schedule</h3>
+                      <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--app-text-primary)' }}>Full Weekly Schedule</h3>
                   </IonText>
                 </div>
                 {allSchedules.map((item, index) => {
@@ -923,20 +935,20 @@ const Home: React.FC = () => {
                         justifyContent: 'space-between',
                         alignItems: 'center',
                         padding: '0.7rem 0',
-                        borderBottom: index < allSchedules.length - 1 ? '1px solid #2a2a2a' : 'none',
-                        backgroundColor: isToday ? '#242424' : 'transparent',
+                        borderBottom: index < allSchedules.length - 1 ? '1px solid var(--app-border)' : 'none',
+                        backgroundColor: isToday ? 'var(--app-surface-elevated)' : 'transparent',
                         borderRadius: isToday ? '8px' : '0',
                         paddingLeft: isToday ? '0.75rem' : '0',
                         paddingRight: isToday ? '0.75rem' : '0',
                       }}
                     >
                       <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#22c55e' : '#ffffff' }}>
+                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
                           {item.day} {isToday && '(Today)'}
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: '#b0b0b0' }}>{item.street}</div>
+                        <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#22c55e' : '#ffffff' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
                         <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
                         <span style={{ fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
                       </div>

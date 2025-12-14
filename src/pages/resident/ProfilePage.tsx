@@ -8,6 +8,7 @@ import useCurrentUser from '../../state/useCurrentUser';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import RefreshButton from '../../components/RefreshButton';
+import ThemeToggle from '../../components/ThemeToggle';
 
 const ProfilePage: React.FC = () => {
   const history = useHistory();
@@ -215,7 +216,7 @@ const ProfilePage: React.FC = () => {
   return (
     <IonPage>
       <IonHeader>
-        <IonToolbar style={{ '--background': '#16a34a', '--color': '#ecfdf3' }}>
+        <IonToolbar>
           <IonButtons slot="start">
             <IonButton 
               onClick={() => history.goBack()}
@@ -229,13 +230,14 @@ const ProfilePage: React.FC = () => {
           </IonButtons>
           <IonTitle>Profile</IonTitle>
           <IonButtons slot="end">
+            <ThemeToggle />
             <RefreshButton onRefresh={handleRefresh} variant="header" />
           </IonButtons>
         </IonToolbar>
       </IonHeader>
 
       <IonContent fullscreen>
-        <div style={{ padding: '1.5rem', background: '#0a0a0a', minHeight: '100%' }}>
+        <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
           <div style={{ maxWidth: 480, margin: '0 auto' }}>
             {isLoading ? (
               <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
@@ -249,8 +251,8 @@ const ProfilePage: React.FC = () => {
                       width: 64,
                       height: 64,
                       borderRadius: '50%',
-                      backgroundColor: '#242424',
-                      border: '1px solid #2a2a2a',
+                      backgroundColor: 'var(--app-surface-elevated)',
+                      border: '1px solid var(--app-border)',
                       display: 'flex',
                       alignItems: 'center',
                       justifyContent: 'center',
@@ -259,8 +261,8 @@ const ProfilePage: React.FC = () => {
                     <IonIcon icon={personOutline} style={{ fontSize: '2rem', color: '#16a34a' }} />
                   </div>
                   <div>
-                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: '#ffffff' }}>{user?.name || 'User'}</h2>
-                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: '#b0b0b0' }}>{user?.role || 'Resident'}</p>
+                    <h2 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 700, color: 'var(--app-text-primary)' }}>{user?.name || 'User'}</h2>
+                    <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem', color: 'var(--app-text-secondary)' }}>{user?.role || 'Resident'}</p>
                   </div>
                 </div>
 
@@ -268,7 +270,7 @@ const ProfilePage: React.FC = () => {
                   <form onSubmit={(e) => { e.preventDefault(); handleSave(); }}>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonIcon slot="start" icon={personOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel position="stacked">Full Name</IonLabel>
@@ -277,7 +279,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonIcon slot="start" icon={homeOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel position="stacked">Address</IonLabel>
@@ -468,7 +470,7 @@ const ProfilePage: React.FC = () => {
                   <div>
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonIcon slot="start" icon={personOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -479,7 +481,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonIcon slot="start" icon={homeOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>
@@ -490,7 +492,7 @@ const ProfilePage: React.FC = () => {
 
                     <IonItem
                       lines="none"
-                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': '#242424', border: '1px solid #2a2a2a' } as any}
+                      style={{ marginBottom: '1rem', borderRadius: 14, '--background': 'var(--app-surface-elevated)', border: '1px solid var(--app-border)' } as any}
                     >
                       <IonIcon slot="start" icon={locationOutline} style={{ color: '#16a34a', fontSize: '1.2rem' }} />
                       <IonLabel>

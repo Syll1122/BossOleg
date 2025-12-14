@@ -1,7 +1,7 @@
-/* Dark Theme with Black Background and Green/Blue Accents */
+/* Theme with Black Background and Green/Blue Accents */
 
 :root {
-  /* Primary Colors - Green */
+  /* Primary Colors - Green (same for both themes) */
   --ion-color-primary: #22c55e;
   --ion-color-primary-rgb: 34, 197, 94;
   --ion-color-primary-contrast: #ffffff;
@@ -9,14 +9,37 @@
   --ion-color-primary-shade: #1db954;
   --ion-color-primary-tint: #4ade80;
 
-  /* Secondary Colors - Blue */
+  /* Secondary Colors - Blue (same for both themes) */
   --ion-color-secondary: #3b82f6;
   --ion-color-secondary-rgb: 59, 130, 246;
   --ion-color-secondary-contrast: #ffffff;
   --ion-color-secondary-contrast-rgb: 255, 255, 255;
   --ion-color-secondary-shade: #3471db;
   --ion-color-secondary-tint: #5b93f7;
+  
+  /* Green Accents (same for both themes) */
+  --app-green-primary: #22c55e;
+  --app-green-light: #4ade80;
+  --app-green-dark: #16a34a;
+  --app-green-glow: rgba(34, 197, 94, 0.3);
+  
+  /* Blue Accents (same for both themes) */
+  --app-blue-primary: #3b82f6;
+  --app-blue-light: #60a5fa;
+  --app-blue-dark: #2563eb;
+  --app-blue-glow: rgba(59, 130, 246, 0.3);
+  
+  /* Dynamic Accent Colors (same for both themes) */
+  --app-accent-purple: #a855f7;
+  --app-accent-orange: #f97316;
+  --app-accent-yellow: #eab308;
+  --app-accent-pink: #ec4899;
+  --app-accent-teal: #14b8a6;
+  --app-accent-cyan: #06b6d4;
+}
 
+/* Dark Theme (Current Theme) */
+[data-theme="dark"] {
   /* Dark Background Colors */
   --ion-background-color: #0a0a0a;
   --ion-background-color-rgb: 10, 10, 10;
@@ -53,29 +76,54 @@
   --app-border: #2a2a2a;
   --app-border-light: #3a3a3a;
   
-  /* Green Accents */
-  --app-green-primary: #22c55e;
-  --app-green-light: #4ade80;
-  --app-green-dark: #16a34a;
-  --app-green-glow: rgba(34, 197, 94, 0.3);
-  
-  /* Blue Accents */
-  --app-blue-primary: #3b82f6;
-  --app-blue-light: #60a5fa;
-  --app-blue-dark: #2563eb;
-  --app-blue-glow: rgba(59, 130, 246, 0.3);
-  
-  /* Dynamic Accent Colors */
-  --app-accent-purple: #a855f7;
-  --app-accent-orange: #f97316;
-  --app-accent-yellow: #eab308;
-  --app-accent-pink: #ec4899;
-  --app-accent-teal: #14b8a6;
-  --app-accent-cyan: #06b6d4;
-  
   /* Shadows */
   --app-shadow: rgba(0, 0, 0, 0.5);
   --app-shadow-lg: rgba(0, 0, 0, 0.8);
   --app-glow-green: 0 0 20px rgba(34, 197, 94, 0.4);
   --app-glow-blue: 0 0 20px rgba(59, 130, 246, 0.4);
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  /* Light Background Colors */
+  --ion-background-color: #ffffff;
+  --ion-background-color-rgb: 255, 255, 255;
+  --ion-background-color-step-50: #f8f9fa;
+  --ion-background-color-step-100: #f1f3f5;
+  --ion-background-color-step-150: #e9ecef;
+  --ion-background-color-step-200: #dee2e6;
+  --ion-background-color-step-250: #ced4da;
+  --ion-background-color-step-300: #adb5bd;
+
+  /* Text Colors - Dark for light background */
+  --ion-text-color: #1a1a1a;
+  --ion-text-color-rgb: 26, 26, 26;
+  --ion-text-color-step-400: #4a4a4a;
+  --ion-text-color-step-600: #6a6a6a;
+  --ion-text-color-step-800: #8a8a8a;
+  --ion-text-color-step-900: #aaaaaa;
+
+  /* Border & Divider */
+  --ion-border-color: #e2e8f0;
+  --ion-item-border-color: #e2e8f0;
+
+  /* Card & Surface - Light panels */
+  --ion-card-background: #ffffff;
+  --ion-toolbar-background: #f8f9fa;
+  
+  /* Custom App Colors */
+  --app-bg-primary: #ffffff;
+  --app-bg-secondary: #f8f9fa;
+  --app-surface: #ffffff;
+  --app-surface-elevated: #f1f3f5;
+  --app-text-primary: #1a1a1a;
+  --app-text-secondary: #6a6a6a;
+  --app-border: #e2e8f0;
+  --app-border-light: #cbd5e1;
+  
+  /* Shadows */
+  --app-shadow: rgba(0, 0, 0, 0.1);
+  --app-shadow-lg: rgba(0, 0, 0, 0.15);
+  --app-glow-green: 0 0 20px rgba(34, 197, 94, 0.2);
+  --app-glow-blue: 0 0 20px rgba(59, 130, 246, 0.2);
 }
