@@ -33,9 +33,6 @@ const SignUpPage: React.FC = () => {
   const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
   const [phoneNumber, setPhoneNumber] = useState('');
 
-  // Available trucks in the system
-  const ALL_TRUCKS = ['BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
-
   // Barangays loaded from database
   const [barangays, setBarangays] = useState<Array<{ id: string; name: string }>>([]);
   const [isLoadingBarangays, setIsLoadingBarangays] = useState(false);
@@ -84,15 +81,11 @@ const SignUpPage: React.FC = () => {
         setIsLoadingTrucks(true);
         try {
           await databaseService.init();
-          const collectors = await databaseService.getAccountsByRole('collector');
-          const assignedTrucks = collectors
-            .map((c) => c.truckNo)
-            .filter((truck): truck is string => !!truck);
-          const available = ALL_TRUCKS.filter((truck) => !assignedTrucks.includes(truck));
+          const available = await databaseService.getAvailableTrucks();
           setAvailableTrucks(available);
         } catch (error) {
           console.error('Error loading available trucks:', error);
-          setAvailableTrucks(ALL_TRUCKS); // Fallback to all trucks
+          setAvailableTrucks([]); // Fallback to empty array
         } finally {
           setIsLoadingTrucks(false);
         }
