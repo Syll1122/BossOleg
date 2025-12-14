@@ -213,15 +213,15 @@ const LoginPage: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '2rem 1.5rem',
-            background: '#0a0a0a',
+            background: 'var(--app-bg-primary)',
           }}
         >
           <div
             style={{
               width: '100%',
               maxWidth: 380,
-              background: '#1a1a1a',
-              border: '1px solid #2a2a2a',
+              background: 'var(--app-surface)',
+              border: '1px solid var(--app-border)',
               borderRadius: 28,
               boxShadow: '0 20px 45px rgba(0, 0, 0, 0.6)',
               overflow: 'hidden',
@@ -387,7 +387,7 @@ const LoginPage: React.FC = () => {
           </div>
 
           <IonText>
-            <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: '#6b7280', textAlign: 'center' }}>
+            <p style={{ marginTop: '1.5rem', fontSize: '0.8rem', color: 'var(--app-text-secondary)', textAlign: 'center' }}>
               By signing in you agree to follow proper waste segregation and barangay guidelines.
             </p>
           </IonText>

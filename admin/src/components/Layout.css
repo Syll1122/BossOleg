@@ -6,11 +6,19 @@
 
 .sidebar {
   width: 280px;
-  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
   border-right: 2px solid var(--border);
   display: flex;
   flex-direction: column;
   box-shadow: 4px 0 20px rgba(22, 163, 74, 0.08);
+}
+
+[data-theme="dark"] .sidebar {
+  background: linear-gradient(180deg, #ffffff 0%, #f0fdf4 100%);
+}
+
+[data-theme="light"] .sidebar {
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--bg) 100%);
 }
 
 .sidebar-header {
@@ -119,7 +127,15 @@
 .sidebar-footer {
   padding: 1.5rem;
   border-top: 2px solid var(--border);
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--primary-bg) 100%);
+}
+
+[data-theme="dark"] .sidebar-footer {
   background: linear-gradient(180deg, white 0%, var(--primary-bg) 100%);
+}
+
+[data-theme="light"] .sidebar-footer {
+  background: linear-gradient(180deg, var(--bg-card) 0%, var(--primary-bg) 100%);
 }
 
 .user-info {
@@ -128,7 +144,7 @@
   gap: 0.875rem;
   margin-bottom: 1rem;
   padding: 0.75rem;
-  background: white;
+  background: var(--bg-card);
   border-radius: 0.75rem;
   box-shadow: 0 2px 8px rgba(22, 163, 74, 0.1);
 }

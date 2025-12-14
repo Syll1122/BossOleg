@@ -1,0 +1,13 @@
+.theme-toggle-button {
+  --color: var(--app-text-primary);
+  transition: transform 0.2s ease;
+}
+
+.theme-toggle-button:hover {
+  transform: scale(1.1);
+}
+
+.theme-toggle-button:active {
+  transform: scale(0.95);
+}
+

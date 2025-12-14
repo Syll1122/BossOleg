@@ -442,7 +442,7 @@ const SignUpPage: React.FC = () => {
                 style={{
                   marginTop: '0.75rem',
                   fontSize: '0.95rem',
-                  color: '#b0b0b0',
+                  color: 'var(--app-text-secondary)',
                   lineHeight: '1.5',
                 }}
               >
@@ -457,9 +457,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -486,9 +486,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -515,9 +515,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -639,9 +639,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -669,9 +669,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -698,9 +698,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
@@ -916,9 +916,9 @@ const SignUpPage: React.FC = () => {
                   style={{ 
                     marginBottom: '1rem', 
                     borderRadius: 16, 
-                    '--background': '#242424', 
-                    '--color': '#ffffff', 
-                    border: '1px solid #2a2a2a',
+                    '--background': 'var(--app-surface-elevated)', 
+                    '--color': 'var(--app-text-primary)', 
+                    border: '1px solid var(--app-border)',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
                     transition: 'all 0.3s ease',
                   } as any}
