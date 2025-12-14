@@ -17,6 +17,8 @@ interface DayLocation {
   lng: number;
   scheduleId: string;
   locationIndex: number;
+  streetId?: string;
+  routeCoordinates?: [number, number][];
 }
 
 export const CollectorStack: React.FC = () => {

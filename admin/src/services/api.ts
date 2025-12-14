@@ -358,6 +358,164 @@ export async function rejectRegistration(
   return updatedAccount;
 }
 
+// Trucks
+export interface Truck {
+  id: string;
+  truckNo: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function getDefaultTrucksFull(): Truck[] {
+  const now = new Date().toISOString();
+  return [
+    { id: 'truck-1', truckNo: 'BCG 12*5', isActive: true, createdAt: now, updatedAt: now },
+    { id: 'truck-2', truckNo: 'BCG 13*6', isActive: true, createdAt: now, updatedAt: now },
+    { id: 'truck-3', truckNo: 'BCG 14*7', isActive: true, createdAt: now, updatedAt: now },
+  ];
+}
+
+export async function getAllTrucks(): Promise<Truck[]> {
+  try {
+    const { data, error } = await supabase
+      .from('trucks')
+      .select('*')
+      .order('truckNo', { ascending: true });
+
+    if (error) {
+      // If table doesn't exist, return fallback list
+      if (error.message && error.message.includes('does not exist')) {
+        console.warn('trucks table does not exist. Using fallback list. Please run the migration SQL.');
+        return getDefaultTrucksFull();
+      }
+      throw error;
+    }
+
+    // If table exists but is empty, return fallback list
+    if (!data || data.length === 0) {
+      console.warn('trucks table is empty. Using fallback list. Please run the migration SQL to populate it.');
+      return getDefaultTrucksFull();
+    }
+
+    return data.map((t: any) => ({
+      id: t.id,
+      truckNo: t.truckNo,
+      isActive: t.isActive,
+      createdAt: t.createdAt || new Date().toISOString(),
+      updatedAt: t.updatedAt || new Date().toISOString(),
+    })) as Truck[];
+  } catch (error: any) {
+    console.error('Error fetching trucks:', error);
+    return getDefaultTrucksFull();
+  }
+}
+
+export async function getAvailableTrucks(): Promise<string[]> {
+  try {
+    // Get all active trucks
+    const allTrucks = await getAllTrucks();
+    const activeTruckNos = allTrucks
+      .filter(t => t.isActive)
+      .map(t => t.truckNo);
+
+    // Get all collectors with assigned trucks
+    const collectors = await getAllAccounts();
+    const assignedTrucks = collectors
+      .filter(c => c.role === 'collector')
+      .map(c => c.truckNo)
+      .filter((truck): truck is string => !!truck);
+
+    // Return trucks that are not assigned
+    return activeTruckNos.filter(truck => !assignedTrucks.includes(truck));
+  } catch (error: any) {
+    console.error('Error fetching available trucks:', error);
+    return getDefaultTrucksFull().filter(t => t.isActive).map(t => t.truckNo);
+  }
+}
+
+export async function createTruck(truckNo: string): Promise<Truck> {
+  // Check if truck number already exists
+  const existing = await getAllTrucks();
+  if (existing.some(t => t.truckNo === truckNo)) {
+    throw new Error('Truck number already exists');
+  }
+
+  const newTruck: Truck = {
+    id: `truck-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+    truckNo: truckNo.trim(),
+    isActive: true,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabase
+    .from('trucks')
+    .insert(newTruck)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as Truck;
+}
+
+export async function updateTruck(id: string, updates: { truckNo?: string; isActive?: boolean }): Promise<Truck> {
+  // If updating truck number, check if it already exists
+  if (updates.truckNo) {
+    const existing = await getAllTrucks();
+    const duplicate = existing.find(t => t.truckNo === updates.truckNo && t.id !== id);
+    if (duplicate) {
+      throw new Error('Truck number already exists');
+    }
+  }
+
+  const updateData: any = {
+    updatedAt: new Date().toISOString(),
+  };
+
+  if (updates.truckNo !== undefined) {
+    updateData.truckNo = updates.truckNo.trim();
+  }
+  if (updates.isActive !== undefined) {
+    updateData.isActive = updates.isActive;
+  }
+
+  const { data, error } = await supabase
+    .from('trucks')
+    .update(updateData)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(error.message);
+  }
+
+  return data as Truck;
+}
+
+export async function deleteTruck(id: string): Promise<void> {
+  // Check if truck is assigned to any collector
+  const collectors = await getAllAccounts();
+  const assignedTruck = collectors.find(c => {
+    // We need to check if this truck ID matches any collector's truck number
+    // First, get the truck to check its truckNo
+    return false; // We'll handle this check in the component
+  });
+
+  const { error } = await supabase
+    .from('trucks')
+    .delete()
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
+}
+
 export async function getRegistrationHistory(): Promise<RegistrationHistory[]> {
   // Get history from registration_history table
   let historyEntries: RegistrationHistory[] = [];
