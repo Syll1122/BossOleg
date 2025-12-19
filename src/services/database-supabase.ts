@@ -722,6 +722,80 @@ class SupabaseDatabaseService {
     }
   }
 
+  // ========== TRUCKS METHODS ==========
+
+  /**
+   * Get all trucks (active and inactive)
+   */
+  async getAllTrucks(): Promise<Array<{ id: string; truckNo: string; isActive: boolean }>> {
+    try {
+      const { data, error } = await supabase
+        .from('trucks')
+        .select('id, truckNo, isActive')
+        .order('truckNo', { ascending: true });
+
+      if (error) {
+        // If table doesn't exist, return fallback list
+        if (error.message && error.message.includes('does not exist')) {
+          console.warn('trucks table does not exist. Using fallback list. Please run the migration SQL.');
+          return this.getDefaultTrucks();
+        }
+        throw new Error(error.message);
+      }
+
+      // If table exists but is empty, return fallback list
+      if (!data || data.length === 0) {
+        console.warn('trucks table is empty. Using fallback list. Please run the migration SQL to populate it.');
+        return this.getDefaultTrucks();
+      }
+
+      return data.map(t => ({
+        id: t.id,
+        truckNo: t.truckNo,
+        isActive: t.isActive
+      }));
+    } catch (error: any) {
+      console.error('Error fetching trucks:', error);
+      return this.getDefaultTrucks();
+    }
+  }
+
+  /**
+   * Get available trucks (not assigned to any collector)
+   */
+  async getAvailableTrucks(): Promise<string[]> {
+    try {
+      // Get all active trucks
+      const allTrucks = await this.getAllTrucks();
+      const activeTruckNos = allTrucks
+        .filter(t => t.isActive)
+        .map(t => t.truckNo);
+
+      // Get all collectors with assigned trucks
+      const collectors = await this.getAccountsByRole('collector');
+      const assignedTrucks = collectors
+        .map(c => c.truckNo)
+        .filter((truck): truck is string => !!truck);
+
+      // Return trucks that are not assigned
+      return activeTruckNos.filter(truck => !assignedTrucks.includes(truck));
+    } catch (error: any) {
+      console.error('Error fetching available trucks:', error);
+      return this.getDefaultTrucks().filter(t => t.isActive).map(t => t.truckNo);
+    }
+  }
+
+  /**
+   * Default trucks fallback list
+   */
+  private getDefaultTrucks(): Array<{ id: string; truckNo: string; isActive: boolean }> {
+    return [
+      { id: 'truck-1', truckNo: 'BCG 12*5', isActive: true },
+      { id: 'truck-2', truckNo: 'BCG 13*6', isActive: true },
+      { id: 'truck-3', truckNo: 'BCG 14*7', isActive: true },
+    ];
+  }
+
   /**
    * Search barangays by name
    */
@@ -989,6 +1063,84 @@ class SupabaseDatabaseService {
     }
 
     return data || [];
+  }
+
+  /**
+   * Get collection schedules by barangay name and day
+   */
+  async getSchedulesByBarangayAndDay(barangayName: string, dayAbbr: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*')
+      .contains('days', [dayAbbr]);
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    if (!data) return [];
+
+    // Filter by barangay name (can be in array or string)
+    return data.filter(schedule => {
+      const scheduleBarangayNames = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name 
+        : schedule.barangay_name ? [schedule.barangay_name] : [];
+      
+      return scheduleBarangayNames.some((name: string) => 
+        name && name.toLowerCase().includes(barangayName.toLowerCase()) ||
+        barangayName.toLowerCase().includes(name?.toLowerCase() || '')
+      );
+    });
+  }
+
+  /**
+   * Get all collection schedules by barangay (for all days)
+   */
+  async getSchedulesByBarangay(barangayName: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_schedules')
+      .select('*');
+
+    if (error) {
+      console.error('Error fetching schedules:', error);
+      throw new Error(error.message);
+    }
+
+    if (!data) {
+      console.log('No schedules found in database');
+      return [];
+    }
+
+    console.log(`Filtering ${data.length} schedules for barangay: ${barangayName}`);
+
+    // Filter by barangay name (can be in array or string)
+    const filtered = data.filter(schedule => {
+      const scheduleBarangayNames = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name 
+        : schedule.barangay_name ? [schedule.barangay_name] : [];
+      
+      // Normalize both names for comparison
+      const normalizedResidentBarangay = barangayName.toLowerCase().trim();
+      
+      const matches = scheduleBarangayNames.some((name: string) => {
+        if (!name) return false;
+        const normalizedScheduleBarangay = name.toLowerCase().trim();
+        
+        // Check for exact match or substring match
+        return normalizedScheduleBarangay === normalizedResidentBarangay ||
+               normalizedScheduleBarangay.includes(normalizedResidentBarangay) ||
+               normalizedResidentBarangay.includes(normalizedScheduleBarangay);
+      });
+      
+      if (matches) {
+        console.log(`Match found: schedule barangay(s): ${scheduleBarangayNames.join(', ')}, resident barangay: ${barangayName}`);
+      }
+      
+      return matches;
+    });
+
+    console.log(`Found ${filtered.length} matching schedules`);
+    return filtered;
   }
 
   /**

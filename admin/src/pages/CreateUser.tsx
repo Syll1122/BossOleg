@@ -1,13 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { createAccount, createRegistrationHistory, getAllAccounts } from '../services/api';
+import { createAccount, createRegistrationHistory, getAvailableTrucks } from '../services/api';
 import { sendApprovalEmail } from '../services/emailService';
 import { getAdminSession } from '../services/auth';
 import { supabase } from '../lib/supabase';
 import './CreateUser.css';
-
-// Available trucks in the system (same as signup page)
-const ALL_TRUCKS = ['BCG 12*5', 'BCG 13*6', 'BCG 14*7'];
 
 export default function CreateUser() {
   const navigate = useNavigate();
@@ -63,16 +60,11 @@ export default function CreateUser() {
       if (formData.role === 'collector') {
         setIsLoadingTrucks(true);
         try {
-          const collectors = await getAllAccounts();
-          const assignedTrucks = collectors
-            .filter(c => c.role === 'collector')
-            .map((c) => c.truckNo)
-            .filter((truck): truck is string => !!truck);
-          const available = ALL_TRUCKS.filter((truck) => !assignedTrucks.includes(truck));
+          const available = await getAvailableTrucks();
           setAvailableTrucks(available);
         } catch (error) {
           console.error('Error loading available trucks:', error);
-          setAvailableTrucks(ALL_TRUCKS); // Fallback to all trucks
+          setAvailableTrucks([]); // Fallback to empty array
         } finally {
           setIsLoadingTrucks(false);
         }

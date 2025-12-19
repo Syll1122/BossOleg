@@ -14,14 +14,27 @@ interface Schedule {
   days: string[]; // Array of day abbreviations: ['Mon', 'Tue', 'Wed', etc.]
   created_at: string;
   updated_at: string;
-  latitude?: number[]; // Array of latitude coordinates
-  longitude?: number[]; // Array of longitude coordinates
+  latitude?: number[]; // Array of latitude coordinates (route path)
+  longitude?: number[]; // Array of longitude coordinates (route path)
   truck_no?: string;
   barangay_name?: string[]; // Array of barangay names
   street_name?: string[]; // Array of street names
 }
 
+interface TemporaryRoute {
+  id: string;
+  barangay: string;
+  barangayId?: string;
+  street?: string;
+  coordinates: Array<[number, number]>; // Route path from OSRM
+  polyline: L.Polyline;
+  days: string[];
+  startPoint: { lat: number; lng: number };
+  endPoint: { lat: number; lng: number };
+}
+
 const DAYS_OF_WEEK = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
 
 // Available marker colors (from leaflet-color-markers)
 const MARKER_COLORS = [
@@ -68,31 +81,41 @@ export default function Schedules() {
   const [selectedCollector, setSelectedCollector] = useState<string>('');
   const [selectedDays, setSelectedDays] = useState<string[]>([]);
   const [barangaySearch, setBarangaySearch] = useState('');
-  const [barangays, setBarangays] = useState<Array<{ id: string; name: string }>>([]);
-  const [showBarangayDropdown, setShowBarangayDropdown] = useState(false);
-  const [filteredBarangays, setFilteredBarangays] = useState<Array<{ id: string; name: string }>>([]);
+  const [barangays, setBarangays] = useState<Array<{ id: string; name: string; latitude?: number; longitude?: number }>>([]);
   const [selectedBarangay, setSelectedBarangay] = useState('');
   const [selectedStreets, setSelectedStreets] = useState<string[]>([]);
-  const [streetSearch, setStreetSearch] = useState('');
-  const [showStreetDropdown, setShowStreetDropdown] = useState(false);
   const [selectedBarangayCoords, setSelectedBarangayCoords] = useState<{ lat: number; lng: number } | null>(null);
-  const [mapPickMode, setMapPickMode] = useState(false);
-  const [flagMarker, setFlagMarker] = useState<L.Marker | null>(null);
   const [mapSelectedLocation, setMapSelectedLocation] = useState<{ lat: number; lng: number; address?: any } | null>(null);
-  // Temporary storage for flag drops
-  const [temporarySchedules, setTemporarySchedules] = useState<Array<{
-    id: string;
-    street: string;
-    barangay: string;
-    barangayId?: string;
-    latitude: number;
-    longitude: number;
-    marker: L.Marker;
-  }>>([]);
+  
+  // Route creation mode state
+  const [routeMode, setRouteMode] = useState(false);
+  const routeModeRef = useRef(false);
+  const [routeStartPoint, setRouteStartPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const routeStartPointRef = useRef<{ lat: number; lng: number } | null>(null);
+  const [routeEndPoint, setRouteEndPoint] = useState<{ lat: number; lng: number } | null>(null);
+  const routeEndPointRef = useRef<{ lat: number; lng: number } | null>(null);
+  const startMarkerRef = useRef<L.Marker | null>(null);
+  const endMarkerRef = useRef<L.Marker | null>(null);
+  
+  // Temporary storage for routes (polylines)
+  const [temporaryRoutes, setTemporaryRoutes] = useState<TemporaryRoute[]>([]);
+  
+  // Route metadata modal state
+  const [showRouteModal, setShowRouteModal] = useState(false);
+  const [pendingRoute, setPendingRoute] = useState<{
+    coordinates: Array<[number, number]>;
+    startPoint: { lat: number; lng: number };
+    endPoint: { lat: number; lng: number };
+    polyline: L.Polyline;
+  } | null>(null);
+  const [routeModalDays, setRouteModalDays] = useState<string[]>([]);
+  
+  // Edit route days modal state
+  const [editingRouteId, setEditingRouteId] = useState<string | null>(null);
+  const [editingRouteDays, setEditingRouteDays] = useState<string[]>([]);
+  
   const mapRef = useRef<L.Map | null>(null);
   const mapContainerRef = useRef<HTMLDivElement>(null);
-  const flagMarkerRef = useRef<L.Marker | null>(null);
-  const mapPickModeRef = useRef(false);
   const [locationSearch, setLocationSearch] = useState('');
   const [locationSearchResults, setLocationSearchResults] = useState<Array<{
     display_name: string;
@@ -101,7 +124,6 @@ export default function Schedules() {
     place_id: number;
   }>>([]);
   const [showLocationSearchDropdown, setShowLocationSearchDropdown] = useState(false);
-  const searchMarkerRef = useRef<L.Marker | null>(null);
 
   useEffect(() => {
     loadData();
@@ -157,6 +179,28 @@ export default function Schedules() {
     }
   };
 
+  // Fetch route from OSRM API
+  const fetchOSRMRoute = async (startLat: number, startLng: number, endLat: number, endLng: number): Promise<Array<[number, number]> | null> => {
+    try {
+      // OSRM expects coordinates as [lng, lat]
+      const url = `https://router.project-osrm.org/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson`;
+      
+      const response = await fetch(url);
+      const data = await response.json();
+      
+      if (data.code === 'Ok' && data.routes && data.routes.length > 0) {
+        const route = data.routes[0];
+        const coordinates = route.geometry.coordinates.map((coord: [number, number]) => [coord[1], coord[0]]); // Convert [lng, lat] to [lat, lng]
+        return coordinates;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('OSRM route fetch error:', error);
+      return null;
+    }
+  };
+
   // Handle location search input change
   const handleLocationSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
@@ -180,48 +224,18 @@ export default function Schedules() {
     }
   };
 
-  // Function to remove temporary schedule by ID (for map popup buttons)
-  const removeTempScheduleById = useRef<(id: string) => void>();
-
-  // Expose removeTempSchedule function to window for map popup buttons
-  useEffect(() => {
-    removeTempScheduleById.current = (id: string) => {
-      setTemporarySchedules(prev => {
-        const toRemove = prev.find(temp => temp.id === id);
-        if (toRemove) {
-          // Remove marker from map
-          if (mapRef.current && mapRef.current.hasLayer(toRemove.marker)) {
-            mapRef.current.removeLayer(toRemove.marker);
-          }
-          // Remove from selected streets if it was in there
-          setSelectedStreets(prevStreets => prevStreets.filter(s => s !== toRemove.street));
-          
-          // If this was the last street for this barangay, clear barangay selection
-          const remainingForBarangay = prev.filter(t => t.barangay === toRemove.barangay && t.id !== id);
-          if (remainingForBarangay.length === 0) {
-            setSelectedBarangay('');
-            setBarangaySearch('');
-            setSelectedBarangayCoords(null);
-            setMapSelectedLocation(null);
-          }
+  // Remove temporary route by ID
+  const removeTempRoute = (id: string) => {
+    setTemporaryRoutes(prev => {
+      const toRemove = prev.find(r => r.id === id);
+      if (toRemove && mapRef.current) {
+        if (mapRef.current.hasLayer(toRemove.polyline)) {
+          mapRef.current.removeLayer(toRemove.polyline);
         }
-        return prev.filter(temp => temp.id !== id);
-      });
-      
-      // Close any open popups
-      if (mapRef.current) {
-        mapRef.current.closePopup();
       }
-    };
-
-    (window as any).removeTempSchedule = (id: string) => {
-      removeTempScheduleById.current?.(id);
-    };
-
-    return () => {
-      delete (window as any).removeTempSchedule;
-    };
-  }, []);
+      return prev.filter(r => r.id !== id);
+    });
+  };
 
   // Initialize Leaflet map
   useEffect(() => {
@@ -303,15 +317,23 @@ export default function Schedules() {
           }
         }, 100);
 
-        // Map click handler for flag dropping
+        // Map click handler for route creation
         mapRef.current.on('click', async (e: L.LeafletMouseEvent) => {
-        if (mapPickModeRef.current) {
+          if (!routeModeRef.current) return;
+          
           const { lat, lng } = e.latlng;
           
-          // Don't remove existing markers - allow multiple flags
-
-          // Create flag marker (red marker for selection)
-          const flagIcon = L.icon({
+          // Create marker icons
+          const startIcon = L.icon({
+            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-green.png',
+            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+            iconSize: [25, 41],
+            iconAnchor: [12, 41],
+            popupAnchor: [1, -34],
+            shadowSize: [41, 41]
+          });
+          
+          const endIcon = L.icon({
             iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
             shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
             iconSize: [25, 41],
@@ -319,175 +341,89 @@ export default function Schedules() {
             popupAnchor: [1, -34],
             shadowSize: [41, 41]
           });
-
-          const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current!);
-          flagMarkerRef.current = marker;
-          setFlagMarker(marker);
-
-          // Perform reverse geocoding
-          const addressData = await reverseGeocode(lat, lng);
           
-          if (addressData && addressData.address) {
-            const address = addressData.address;
+          if (!routeStartPointRef.current) {
+            // First click - set start point
+            const startPoint = { lat, lng };
+            routeStartPointRef.current = startPoint;
+            setRouteStartPoint(startPoint);
             
-            // Extract street name
-            const street = address.road || address.pedestrian || '';
-            
-            // Try to find barangay by matching against database barangays first
-            // Check multiple address fields that might contain barangay info
-            const possibleBarangayFields = [
-              address.suburb,
-              address.neighbourhood,
-              address.city_district,
-              address.quarter,
-              address.village,
-              address.city,
-            ].filter(Boolean); // Remove empty values
-            
-            let barangay = '';
-            let barangayObj = null;
-            
-            // First, try to find exact match in our barangays database
-            for (const field of possibleBarangayFields) {
-              if (!field) continue;
-              
-              // Skip if it contains "district" (not a barangay name)
-              if (field.toLowerCase().includes('district')) {
-                continue;
-              }
-              
-              // Try exact match (case insensitive)
-              const match = barangays.find(b => 
-                b.name.toLowerCase() === field.toLowerCase()
-              );
-              
-              if (match) {
-                barangay = match.name;
-                barangayObj = match;
-                break;
-              }
-              
-              // Try partial match (contains)
-              const partialMatch = barangays.find(b => 
-                field.toLowerCase().includes(b.name.toLowerCase()) ||
-                b.name.toLowerCase().includes(field.toLowerCase())
-              );
-              
-              if (partialMatch && !field.toLowerCase().includes('district')) {
-                barangay = partialMatch.name;
-                barangayObj = partialMatch;
-                break;
-              }
+            // Remove previous start marker if exists
+            if (startMarkerRef.current && mapRef.current) {
+              mapRef.current.removeLayer(startMarkerRef.current);
             }
             
-            // If still no match, use the first non-district field as fallback
-            if (!barangay) {
-              for (const field of possibleBarangayFields) {
-                if (field && !field.toLowerCase().includes('district')) {
-                  barangay = field;
-                  // Try one more time to find in database
-                  const match = barangays.find(b => 
-                    b.name.toLowerCase().includes(field.toLowerCase()) ||
-                    field.toLowerCase().includes(b.name.toLowerCase())
-                  );
-                  if (match) {
-                    barangayObj = match;
-                    barangay = match.name;
-                  }
-                  break;
-                }
-              }
+            const marker = L.marker([lat, lng], { icon: startIcon })
+              .addTo(mapRef.current!)
+              .bindPopup('Start Point')
+              .openPopup();
+            
+            startMarkerRef.current = marker;
+            
+          } else if (!routeEndPointRef.current) {
+            // Second click - set end point and fetch route
+            const endPoint = { lat, lng };
+            routeEndPointRef.current = endPoint;
+            setRouteEndPoint(endPoint);
+            
+            // Remove previous end marker if exists
+            if (endMarkerRef.current && mapRef.current) {
+              mapRef.current.removeLayer(endMarkerRef.current);
             }
             
-            if (barangay && street) {
-              const barangayId = barangayObj?.id || '';
+            const marker = L.marker([lat, lng], { icon: endIcon })
+              .addTo(mapRef.current!)
+              .bindPopup('End Point')
+              .openPopup();
+            
+            endMarkerRef.current = marker;
+            
+            // Fetch route from OSRM using ref values
+            const start = routeStartPointRef.current;
+            const routeCoordinates = await fetchOSRMRoute(
+              start.lat,
+              start.lng,
+              lat,
+              lng
+            );
+            
+            if (routeCoordinates && routeCoordinates.length > 0) {
+              // Draw polyline on map
+              const polyline = L.polyline(routeCoordinates as [number, number][], {
+                color: '#3b82f6',
+                weight: 6,
+                opacity: 0.7
+              }).addTo(mapRef.current!);
               
-              // Create temporary schedule entry
-              const tempId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-              const tempEntry = {
-                id: tempId,
-                street: street,
-                barangay: barangay,
-                barangayId: barangayId,
-                latitude: lat,
-                longitude: lng,
-                marker: marker,
-              };
+              // Store pending route and open modal
+              setPendingRoute({
+                coordinates: routeCoordinates as [number, number][],
+                startPoint: start,
+                endPoint: endPoint,
+                polyline
+              });
               
-              // Add to temporary storage
-              setTemporarySchedules(prev => [...prev, tempEntry]);
+              // Open modal for route metadata
+              setShowRouteModal(true);
               
-              // Don't overwrite selected barangay - let user click street tags to see different barangays
-              // Only update coordinates if not already set
-              if (!selectedBarangayCoords) {
-                setSelectedBarangayCoords({ lat, lng });
-              }
-              
-              if (!selectedStreets.includes(street)) {
-                setSelectedStreets(prev => [...prev, street]);
-              }
-              
-              // Update marker popup with remove option
-              const popupContent = document.createElement('div');
-              popupContent.style.cssText = 'text-align: center; padding: 0.5rem;';
-              popupContent.innerHTML = `
-                <strong>${street}</strong><br/>
-                ${barangay}<br/>
-                <button 
-                  id="remove-temp-${tempId}"
-                  style="
-                    margin-top: 0.5rem;
-                    padding: 0.25rem 0.5rem;
-                    background: #ef4444;
-                    color: white;
-                    border: none;
-                    border-radius: 0.25rem;
-                    cursor: pointer;
-                    font-size: 0.75rem;
-                  "
-                >
-                  Remove
-                </button>
-              `;
-              
-              marker.bindPopup(popupContent).openPopup();
-              
-              // Add click handler to remove button
-              setTimeout(() => {
-                const removeBtn = document.getElementById(`remove-temp-${tempId}`);
-                if (removeBtn) {
-                  removeBtn.onclick = () => {
-                    removeTempScheduleById.current?.(tempId);
-                  };
-                }
-              }, 100);
-              
-              // Keep map pick mode enabled so user can drop multiple flags
-              // Don't set mapPickMode to false here
-            } else if (street) {
-              // We have street but no valid barangay - allow user to manually select barangay
-              marker.bindPopup('Selected Location - Please select barangay manually').openPopup();
-              setMapSelectedLocation({ lat, lng, address: addressData });
-              setSelectedBarangayCoords({ lat, lng });
-              // Don't set barangay automatically - let user select from dropdown
-              // Keep map pick mode enabled for multiple picks
             } else {
-              // No street or barangay found
-              alert('Could not determine street or barangay from location. Please enter manually.');
-              marker.bindPopup('Selected Location - Please enter details manually').openPopup();
-              setMapSelectedLocation({ lat, lng, address: addressData });
-              setSelectedBarangayCoords({ lat, lng });
-              // Keep map pick mode enabled for multiple picks
+              alert('Failed to fetch route. Please try clicking the points again.');
+              // Reset route points
+              routeStartPointRef.current = null;
+              routeEndPointRef.current = null;
+              setRouteStartPoint(null);
+              setRouteEndPoint(null);
+              if (startMarkerRef.current && mapRef.current) {
+                mapRef.current.removeLayer(startMarkerRef.current);
+                startMarkerRef.current = null;
+              }
+              if (endMarkerRef.current && mapRef.current) {
+                mapRef.current.removeLayer(endMarkerRef.current);
+                endMarkerRef.current = null;
+              }
             }
-          } else {
-            marker.bindPopup('Selected Location - Please enter details manually').openPopup();
-            setMapSelectedLocation({ lat, lng });
-            setSelectedBarangayCoords({ lat, lng });
-            // Keep map pick mode enabled for multiple picks
-            alert('Location selected! Please enter barangay and street manually.');
-        }
-      }
-    });
+          }
+        });
       } catch (error) {
         console.error('Error initializing map:', error);
       }
@@ -509,8 +445,11 @@ export default function Schedules() {
       }
       if (mapRef.current) {
         mapRef.current.off('click');
-        if (flagMarkerRef.current) {
-          mapRef.current.removeLayer(flagMarkerRef.current);
+        if (startMarkerRef.current) {
+          mapRef.current.removeLayer(startMarkerRef.current);
+        }
+        if (endMarkerRef.current) {
+          mapRef.current.removeLayer(endMarkerRef.current);
         }
         mapRef.current.remove();
         mapRef.current = null;
@@ -518,39 +457,33 @@ export default function Schedules() {
     };
   }, []); // Empty dependency array - setup once
 
-  // F key handler for toggling map pick mode
-  useEffect(() => {
-    const handleKeyPress = (e: KeyboardEvent) => {
-      // Only activate if not typing in an input field
-      const target = e.target as HTMLElement;
-      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
-        return;
-      }
-      
-      if (e.key === 'f' || e.key === 'F') {
-        if (!e.ctrlKey && !e.metaKey && !e.altKey) {
-          e.preventDefault();
-          toggleMapPickModeRef.current();
-        }
-      }
-    };
 
-    window.addEventListener('keydown', handleKeyPress);
-    return () => {
-      window.removeEventListener('keydown', handleKeyPress);
-    };
-  }, []); // Empty deps - toggleMapPickMode is stable
-
-  // Update map markers when schedules or selected barangay changes
+  // Update map markers and polylines when schedules change
   useEffect(() => {
     if (!mapRef.current) return;
 
-    // Clear existing schedule markers but keep temporary schedule markers (red)
-    const temporaryMarkerIds = new Set(temporarySchedules.map(t => t.marker._leaflet_id));
+    // Clear existing schedule markers and polylines, but keep temporary routes and route creation markers
+    const temporaryPolylineIds = new Set(temporaryRoutes.map(r => (r.polyline as any)._leaflet_id));
+    const routeCreationMarkerIds = new Set([
+      (startMarkerRef.current as any)?._leaflet_id,
+      (endMarkerRef.current as any)?._leaflet_id
+    ].filter(Boolean) as number[]);
     
     mapRef.current.eachLayer((layer) => {
-      if (layer instanceof L.Marker && !temporaryMarkerIds.has((layer as L.Marker)._leaflet_id)) {
-        // Only remove non-temporary markers
+      // Keep temporary route polylines
+      if (layer instanceof L.Polyline && temporaryPolylineIds.has((layer as any)._leaflet_id)) {
+        return;
+      }
+      // Keep route creation markers
+      if (layer instanceof L.Marker && routeCreationMarkerIds.has((layer as any)._leaflet_id)) {
+        return;
+      }
+      // Keep pending route polyline
+      if (layer instanceof L.Polyline && pendingRoute && layer === pendingRoute.polyline) {
+        return;
+      }
+      // Remove all other markers and polylines
+      if (layer instanceof L.Marker || layer instanceof L.Polyline) {
         mapRef.current?.removeLayer(layer);
       }
     });
@@ -570,107 +503,105 @@ export default function Schedules() {
       collectorColorMap.set(collectorId, MARKER_COLORS[index % MARKER_COLORS.length]);
     });
 
-    // Add markers for all schedules with coordinates (colored by collector)
-    // Only add if not already in temporary schedules
+    // Add polylines for all schedules with route coordinates
     schedules.forEach(schedule => {
-      // Get collector info and assign color
       const collector = collectors.find(c => c.id === schedule.collector_id);
       const collectorName = collector?.name || 'Unknown';
       const color = collectorColorMap.get(schedule.collector_id) || 'blue';
-      const markerIcon = createMarkerIcon(color);
       
-      // Handle array format for latitude/longitude
+      // Handle array format for latitude/longitude (route paths)
       if (schedule.latitude && schedule.longitude && Array.isArray(schedule.latitude) && Array.isArray(schedule.longitude)) {
-        // Process each coordinate pair in the arrays
-        schedule.latitude.forEach((lat, index) => {
-          const lng = schedule.longitude?.[index];
-          if (lng !== undefined) {
-            // Check if this location is already marked by a temporary schedule
-            const isTempLocation = temporarySchedules.some(
-              t => Math.abs(t.latitude - lat) < 0.0001 && 
-                   Math.abs(t.longitude - lng) < 0.0001
-            );
+        // If we have multiple coordinates, it's a route path - draw as polyline
+        if (schedule.latitude.length > 1) {
+          const routeCoordinates: [number, number][] = schedule.latitude.map((lat, index) => {
+            const lng = schedule.longitude?.[index];
+            return [lat, lng] as [number, number];
+          }).filter(coord => coord[0] !== undefined && coord[1] !== undefined);
+          
+          if (routeCoordinates.length > 1) {
+            // Convert collector color to hex if needed (using a simple mapping)
+            const polylineColor = color === 'blue' ? '#3b82f6' : 
+                                  color === 'red' ? '#ef4444' :
+                                  color === 'green' ? '#10b981' :
+                                  color === 'orange' ? '#f59e0b' :
+                                  '#3b82f6'; // Default blue
             
-            if (!isTempLocation) {
-              const marker = L.marker([lat, lng], { icon: markerIcon })
-                .addTo(mapRef.current!);
-              
-              // Get barangay name for this index if available
-              const barangayName = Array.isArray(schedule.barangay_name) 
-                ? schedule.barangay_name[index] || schedule.barangay_name[0] 
-                : schedule.barangay_name || 'N/A';
-              
-              // Get street name for this index if available (handle array)
-              const streetNameForIndex = Array.isArray(schedule.street_name) 
-                ? schedule.street_name[index] || schedule.street_name[0] 
-                : schedule.street_name || '';
-              
-              const streetsInfo = streetNameForIndex 
-                ? `<br/>Street: ${streetNameForIndex}` 
-                : '';
-              
-              marker.bindPopup(`
-                <strong>${collectorName}</strong><br/>
-                Truck: ${schedule.truck_no || 'N/A'}<br/>
-                Barangay: ${barangayName}${streetsInfo}<br/>
-                Days: ${schedule.days.join(', ')}
-              `);
-            }
+            const polyline = L.polyline(routeCoordinates, {
+              color: polylineColor,
+              weight: 6,
+              opacity: 0.7
+            }).addTo(mapRef.current!);
+            
+            // Get metadata for popup
+            const barangayName = Array.isArray(schedule.barangay_name) 
+              ? schedule.barangay_name[0] 
+              : schedule.barangay_name || 'N/A';
+            
+            const streetName = Array.isArray(schedule.street_name) 
+              ? schedule.street_name.join(', ') 
+              : schedule.street_name || '';
+            
+                  polyline.bindPopup(`
+              <strong>${collectorName}</strong><br/>
+              Truck: ${schedule.truck_no || 'N/A'}<br/>
+              Barangay: ${barangayName}${streetName ? `<br/>Street: ${streetName}` : ''}<br/>
+              Days: ${schedule.days.join(', ')}
+            `);
           }
-        });
-      } else if (schedule.latitude && schedule.longitude && typeof schedule.latitude === 'number') {
-        // Fallback for single values (backward compatibility with old data)
-        const isTempLocation = temporarySchedules.some(
-          t => Math.abs(t.latitude - schedule.latitude as number) < 0.0001 && 
-               Math.abs(t.longitude - schedule.longitude as number) < 0.0001
-        );
-        
-        if (!isTempLocation) {
-          const marker = L.marker([schedule.latitude as number, schedule.longitude as number], { icon: markerIcon })
-            .addTo(mapRef.current!);
-          
-          const barangayName = Array.isArray(schedule.barangay_name) 
-            ? schedule.barangay_name[0] 
-            : schedule.barangay_name || 'N/A';
-          
-          // Handle array format for street_name
-          const streetName = Array.isArray(schedule.street_name) 
-            ? schedule.street_name.join(', ') 
-            : schedule.street_name || '';
-          
-          const streetsInfo = streetName 
-            ? `<br/>Streets: ${streetName}` 
-            : '';
-          
-          marker.bindPopup(`
-            <strong>${collectorName}</strong><br/>
-            Truck: ${schedule.truck_no || 'N/A'}<br/>
-            Barangay: ${barangayName}${streetsInfo}<br/>
-            Days: ${schedule.days.join(', ')}
-          `);
+        } else if (schedule.latitude.length === 1) {
+          // Single point - show as marker for backward compatibility
+          const lat = schedule.latitude[0];
+          const lng = schedule.longitude?.[0];
+          if (lat !== undefined && lng !== undefined) {
+            const markerIcon = createMarkerIcon(color);
+            const marker = L.marker([lat, lng], { icon: markerIcon })
+              .addTo(mapRef.current!);
+            
+            const barangayName = Array.isArray(schedule.barangay_name) 
+              ? schedule.barangay_name[0] 
+              : schedule.barangay_name || 'N/A';
+            
+            const streetName = Array.isArray(schedule.street_name) 
+              ? schedule.street_name.join(', ') 
+              : schedule.street_name || '';
+            
+            marker.bindPopup(`
+              <strong>${collectorName}</strong><br/>
+              Truck: ${schedule.truck_no || 'N/A'}<br/>
+              Barangay: ${barangayName}${streetName ? `<br/>Street: ${streetName}` : ''}<br/>
+              Days: ${schedule.days.join(', ')}
+            `);
+          }
         }
+      } else if (schedule.latitude && schedule.longitude && !Array.isArray(schedule.latitude) && typeof schedule.latitude === 'number' && typeof schedule.longitude === 'number') {
+        // Fallback for single values (backward compatibility with old data)
+        const markerIcon = createMarkerIcon(color);
+        const marker = L.marker([schedule.latitude, schedule.longitude], { icon: markerIcon })
+          .addTo(mapRef.current!);
+        
+        const barangayName = Array.isArray(schedule.barangay_name) 
+          ? schedule.barangay_name[0] 
+          : schedule.barangay_name || 'N/A';
+        
+        const streetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name.join(', ') 
+          : schedule.street_name || '';
+        
+        marker.bindPopup(`
+          <strong>${collectorName}</strong><br/>
+          Truck: ${schedule.truck_no || 'N/A'}<br/>
+          Barangay: ${barangayName}${streetName ? `<br/>Street: ${streetName}` : ''}<br/>
+          Days: ${schedule.days.join(', ')}
+        `);
       }
     });
 
-    // Flag marker is already added in the map click handler, so we don't add it here
-    // But we can update the view if coordinates are available and flag marker doesn't exist
-    if (selectedBarangayCoords && mapRef.current && !flagMarkerRef.current) {
+    // Update view if coordinates are available
+    if (selectedBarangayCoords && mapRef.current) {
       mapRef.current.setView([selectedBarangayCoords.lat, selectedBarangayCoords.lng], 15);
     }
-  }, [schedules, selectedBarangayCoords, selectedBarangay, collectors, temporarySchedules]);
+  }, [schedules, selectedBarangayCoords, selectedBarangay, collectors, temporaryRoutes, pendingRoute]);
 
-  useEffect(() => {
-    if (barangaySearch) {
-      const filtered = barangays.filter(b =>
-        b.name.toLowerCase().includes(barangaySearch.toLowerCase())
-      );
-      setFilteredBarangays(filtered);
-      setShowBarangayDropdown(true);
-    } else {
-      setFilteredBarangays([]);
-      setShowBarangayDropdown(false);
-    }
-  }, [barangaySearch, barangays]);
 
   const loadData = async () => {
     try {
@@ -708,16 +639,16 @@ export default function Schedules() {
           .select('id, name')
           .order('name', { ascending: true });
         
-        data = result.data;
+        data = result.data as any;
         error = result.error;
       }
 
       if (!error && data) {
-        setBarangays(data.map(bg => ({
+        setBarangays(data.map((bg: any) => ({
           id: bg.id,
           name: bg.name,
-          latitude: (bg as any).latitude || undefined,
-          longitude: (bg as any).longitude || undefined,
+          latitude: bg.latitude || undefined,
+          longitude: bg.longitude || undefined,
         })));
       } else if (error) {
         console.error('Error loading barangays:', error);
@@ -732,9 +663,11 @@ export default function Schedules() {
           .order('name', { ascending: true });
 
         if (!fallbackError && data) {
-          setBarangays(data.map(bg => ({
+          setBarangays(data.map((bg: any) => ({
             id: bg.id,
             name: bg.name,
+            latitude: undefined,
+            longitude: undefined,
           })));
         }
       } catch (fallbackErr) {
@@ -782,151 +715,225 @@ export default function Schedules() {
     setSelectedDays(prev => [...prev, day]);
   };
 
-  const handleBarangaySelect = (barangay: { id: string; name: string; latitude?: number; longitude?: number }) => {
-    if (!mapSelectedLocation) { // Only allow manual selection if not map-picked
-      setSelectedBarangay(barangay.name);
-      setBarangaySearch(barangay.name);
-      setShowBarangayDropdown(false);
-      
-      if (barangay.latitude && barangay.longitude) {
-        setSelectedBarangayCoords({ lat: barangay.latitude, lng: barangay.longitude });
-      }
+
+  // Route creation mode handlers
+  const startRouteMode = () => {
+    routeModeRef.current = true;
+    setRouteMode(true);
+    routeStartPointRef.current = null;
+    routeEndPointRef.current = null;
+    setRouteStartPoint(null);
+    setRouteEndPoint(null);
+    if (mapRef.current) {
+      mapRef.current.getContainer().style.cursor = 'crosshair';
     }
   };
 
-  const handleStreetAdd = (street: string) => {
-    if (street && !selectedStreets.includes(street)) {
-      setSelectedStreets(prev => [...prev, street]);
-      setStreetSearch('');
-      setShowStreetDropdown(false);
-      
-      // If we have barangay and coordinates, create a flag for this street
-      if (selectedBarangay && selectedBarangayCoords && mapRef.current) {
-        // Check if this street already has a flag
-        const existingTemp = temporarySchedules.find(t => t.street === street && t.barangay === selectedBarangay);
-        if (!existingTemp) {
-          const barangayObj = barangays.find(b => b.name === selectedBarangay);
-          const barangayId = barangayObj?.id || '';
-          
-          const tempId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
-          const flagIcon = L.icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
-          });
-          
-          const marker = L.marker([selectedBarangayCoords.lat, selectedBarangayCoords.lng], { icon: flagIcon })
-            .addTo(mapRef.current);
-          
-          // Create popup with remove button
-          const popupContent = document.createElement('div');
-          popupContent.style.cssText = 'text-align: center; padding: 0.5rem;';
-          popupContent.innerHTML = `
-            <strong>${street}</strong><br/>
-            ${selectedBarangay}<br/>
-            <button 
-              id="remove-temp-${tempId}"
-              style="
-                margin-top: 0.5rem;
-                padding: 0.25rem 0.5rem;
-                background: #ef4444;
-                color: white;
-                border: none;
-                border-radius: 0.25rem;
-                cursor: pointer;
-                font-size: 0.75rem;
-              "
-            >
-              Remove
-            </button>
-          `;
-          
-          marker.bindPopup(popupContent);
-          
-          // Add click handler
-          setTimeout(() => {
-            const removeBtn = document.getElementById(`remove-temp-${tempId}`);
-            if (removeBtn) {
-              removeBtn.onclick = () => {
-                removeTempScheduleById.current?.(tempId);
-              };
-            }
-          }, 100);
-          
-          // Add to temporary storage
-          const tempEntry = {
-            id: tempId,
-            street: street,
-            barangay: selectedBarangay,
-            barangayId: barangayId,
-            latitude: selectedBarangayCoords.lat,
-            longitude: selectedBarangayCoords.lng,
-            marker: marker,
-          };
-          
-          setTemporarySchedules(prev => [...prev, tempEntry]);
-        }
-      }
-    }
-  };
-
-  const handleStreetRemove = (street: string) => {
-    // Remove from selected streets
-    setSelectedStreets(prev => prev.filter(s => s !== street));
+  const cancelRouteMode = () => {
+    routeModeRef.current = false;
+    setRouteMode(false);
     
-    // Remove from temporary schedules and remove marker from map
-    setTemporarySchedules(prev => {
-      const toRemove = prev.filter(temp => temp.street === street);
-      toRemove.forEach(temp => {
-        // Remove marker from map
-        if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-          mapRef.current.removeLayer(temp.marker);
-        }
-      });
-      
-      // Check if we need to clear barangay selection
-      const remaining = prev.filter(temp => temp.street !== street);
-      if (remaining.length === 0) {
-        setSelectedBarangay('');
-        setBarangaySearch('');
-        setSelectedBarangayCoords(null);
-        setMapSelectedLocation(null);
+    // Remove start and end markers
+    if (startMarkerRef.current && mapRef.current) {
+      mapRef.current.removeLayer(startMarkerRef.current);
+      startMarkerRef.current = null;
+    }
+    if (endMarkerRef.current && mapRef.current) {
+      mapRef.current.removeLayer(endMarkerRef.current);
+      endMarkerRef.current = null;
+    }
+    
+    // Remove pending route polyline if exists
+    if (pendingRoute && mapRef.current) {
+      if (mapRef.current.hasLayer(pendingRoute.polyline)) {
+        mapRef.current.removeLayer(pendingRoute.polyline);
       }
-      
-      return remaining;
-    });
+      setPendingRoute(null);
+    }
+    
+    routeStartPointRef.current = null;
+    routeEndPointRef.current = null;
+    setRouteStartPoint(null);
+    setRouteEndPoint(null);
+    
+    if (mapRef.current) {
+      mapRef.current.getContainer().style.cursor = '';
+    }
   };
 
-  const toggleMapPickModeRef = useRef<() => void>(() => {});
-  
-  const toggleMapPickMode = () => {
-    setMapPickMode(prev => {
-      const newMode = !prev;
-      mapPickModeRef.current = newMode;
-      if (mapRef.current) {
-        mapRef.current.getContainer().style.cursor = newMode ? 'crosshair' : '';
-        if (!newMode && mapRef.current.getContainer()) {
-          // When disabling pick mode, don't remove markers - just change cursor
-          // Flags should remain on the map
+  // Check for duplicate route
+  const checkDuplicateRoute = (
+    collectorId: string,
+    barangayId: string,
+    barangayName: string,
+    streetName: string | undefined,
+    days: string[]
+  ): Schedule | null => {
+    return schedules.find(schedule => {
+      // Must be same collector
+      if (schedule.collector_id !== collectorId) return false;
+      
+      // Must be same barangay
+      const scheduleBarangayId = schedule.barangay_id;
+      const scheduleBarangayName = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name[0] 
+        : schedule.barangay_name;
+      
+      const barangayMatch = scheduleBarangayId === barangayId || 
+                           scheduleBarangayName?.toLowerCase() === barangayName.toLowerCase();
+      
+      if (!barangayMatch) return false;
+      
+      // If street is provided, check for street match
+      if (streetName) {
+        const scheduleStreetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name[0] 
+          : schedule.street_name;
+        
+        if (scheduleStreetName && scheduleStreetName.toLowerCase() !== streetName.toLowerCase()) {
+          return false;
         }
       }
-      return newMode;
-    });
+      
+      // Check if days overlap (at least one day in common)
+      const scheduleDays = Array.isArray(schedule.days) ? schedule.days : [];
+      const hasOverlappingDay = days.some(day => scheduleDays.includes(day));
+      
+      return hasOverlappingDay;
+    }) || null;
   };
 
-  // Update the ref when the function changes
-  useEffect(() => {
-    toggleMapPickModeRef.current = toggleMapPickMode;
-  }, []);
+  // Handle saving route from modal
+  const handleSaveRouteFromModal = () => {
+    if (!pendingRoute || routeModalDays.length === 0) {
+      alert('Please select at least one collection day');
+      return;
+    }
+
+    if (!selectedCollector) {
+      alert('Please select a collector first');
+      return;
+    }
+
+    // Perform reverse geocoding to get barangay info
+    reverseGeocode(pendingRoute.startPoint.lat, pendingRoute.startPoint.lng).then(addressData => {
+      let detectedBarangay = '';
+      let detectedBarangayObj = null;
+      let detectedStreet = '';
+      
+      if (addressData && addressData.address) {
+        const address = addressData.address;
+        detectedStreet = address.road || address.pedestrian || '';
+        
+        const possibleBarangayFields = [
+          address.suburb,
+          address.neighbourhood,
+          address.city_district,
+          address.quarter,
+          address.village,
+          address.city,
+        ].filter(Boolean);
+        
+        for (const field of possibleBarangayFields) {
+          if (!field || field.toLowerCase().includes('district')) continue;
+          
+          const match = barangays.find(b => 
+            b.name.toLowerCase() === field.toLowerCase()
+          );
+          
+          if (match) {
+            detectedBarangay = match.name;
+            detectedBarangayObj = match;
+            break;
+          }
+          
+          const partialMatch = barangays.find(b => 
+            field.toLowerCase().includes(b.name.toLowerCase()) ||
+            b.name.toLowerCase().includes(field.toLowerCase())
+          );
+          
+          if (partialMatch) {
+            detectedBarangay = partialMatch.name;
+            detectedBarangayObj = partialMatch;
+            break;
+          }
+        }
+      }
+      
+      if (!detectedBarangay && !detectedBarangayObj) {
+        alert('Could not detect barangay. Please select manually.');
+        return;
+      }
+      
+      // Check for duplicate route before adding
+      if (!detectedBarangayObj || !detectedBarangayObj.id) {
+        alert('Could not detect barangay. Please select manually.');
+        return;
+      }
+      
+      const duplicate = checkDuplicateRoute(
+        selectedCollector,
+        detectedBarangayObj.id,
+        detectedBarangay,
+        detectedStreet,
+        routeModalDays
+      );
+      
+      if (duplicate) {
+        const duplicateBarangay = Array.isArray(duplicate.barangay_name) 
+          ? duplicate.barangay_name[0] 
+          : duplicate.barangay_name || 'Unknown';
+        const duplicateStreet = Array.isArray(duplicate.street_name) 
+          ? duplicate.street_name[0] 
+          : duplicate.street_name || '';
+        const duplicateDays = Array.isArray(duplicate.days) ? duplicate.days.join(', ') : '';
+        
+        alert(
+          `A route already exists for this location!\n\n` +
+          `Location: ${duplicateBarangay}${duplicateStreet ? `, ${duplicateStreet}` : ''}\n` +
+          `Days: ${duplicateDays}\n\n` +
+          `Please choose a different location or different days.`
+        );
+        return;
+      }
+      
+      // Extract coordinates for storage
+      const latitudes = pendingRoute.coordinates.map(coord => coord[0]);
+      const longitudes = pendingRoute.coordinates.map(coord => coord[1]);
+      
+      // Create temporary route entry
+      const tempRoute: TemporaryRoute = {
+        id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+        barangay: detectedBarangay,
+        barangayId: detectedBarangayObj?.id,
+        street: detectedStreet,
+        coordinates: pendingRoute.coordinates,
+        polyline: pendingRoute.polyline,
+          days: routeModalDays,
+          startPoint: pendingRoute.startPoint,
+        endPoint: pendingRoute.endPoint
+      };
+      
+      setTemporaryRoutes(prev => [...prev, tempRoute]);
+      
+      // Reset route creation state
+      routeModeRef.current = false;
+      setRouteMode(false);
+      routeStartPointRef.current = null;
+      routeEndPointRef.current = null;
+      setRouteStartPoint(null);
+      setRouteEndPoint(null);
+      setShowRouteModal(false);
+      setPendingRoute(null);
+      setRouteModalDays([]);
+    });
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!selectedCollector || selectedDays.length === 0) {
-      alert('Please select a collector and at least one day');
+    if (!selectedCollector) {
+      alert('Please select a collector');
       return;
     }
 
@@ -936,110 +943,68 @@ export default function Schedules() {
       return;
     }
 
-    // Check if we have temporary schedules or manual entry
-    const hasTemporarySchedules = temporarySchedules.length > 0;
-    const hasManualEntry = selectedBarangay && (selectedStreets.length > 0 || selectedBarangayCoords);
-
-    if (!hasTemporarySchedules && !hasManualEntry) {
-      alert('Please drop a flag on the map or enter location details manually');
+    // Check if we have temporary routes
+    if (temporaryRoutes.length === 0) {
+      alert('Please create at least one route by clicking "Start Route" and selecting start and end points on the map');
       return;
     }
 
     try {
-      const schedulesToCreate = [];
+      const schedulesToCreate: any[] = [];
 
-      // Collect all data from temporary storage (flag drops)
-      if (hasTemporarySchedules) {
-        // Extract arrays from all temporary schedules
-        const latitudes = temporarySchedules.map(temp => temp.latitude);
-        const longitudes = temporarySchedules.map(temp => temp.longitude);
-        const barangayNames = temporarySchedules.map(temp => temp.barangay);
-        const streetNames = temporarySchedules.map(temp => temp.street);
+      // Create schedule for each temporary route
+      for (const tempRoute of temporaryRoutes) {
+        if (!tempRoute.barangayId || tempRoute.barangayId.trim() === '') {
+          alert(`Cannot create schedule: Barangay "${tempRoute.barangay || 'Unknown'}" not found in database.`);
+          continue;
+        }
+
+        // Check for duplicate route in database (excluding current schedule if editing)
+        const duplicate = checkDuplicateRoute(
+          collector.id,
+          tempRoute.barangayId,
+          tempRoute.barangay,
+          tempRoute.street,
+          tempRoute.days
+        );
         
-        // Find barangay ID - try to find in barangays list first
-        let barangayId = '';
-        const firstTemp = temporarySchedules[0];
-        if (firstTemp.barangay) {
-          // Try to find exact match in barangays list
-          const barangayObj = barangays.find(b => 
-            b.name.toLowerCase() === firstTemp.barangay.toLowerCase()
-          );
+        if (duplicate && duplicate.id !== editingScheduleId) {
+          const duplicateBarangay = Array.isArray(duplicate.barangay_name) 
+            ? duplicate.barangay_name[0] 
+            : duplicate.barangay_name || 'Unknown';
+          const duplicateStreet = Array.isArray(duplicate.street_name) 
+            ? duplicate.street_name[0] 
+            : duplicate.street_name || '';
+          const duplicateDays = Array.isArray(duplicate.days) ? duplicate.days.join(', ') : '';
           
-          if (barangayObj) {
-            barangayId = barangayObj.id;
-          } else if (firstTemp.barangayId) {
-            // Use the barangayId from temporary storage if available
-            barangayId = firstTemp.barangayId;
-          } else {
-            // If no match found, we need to skip or use a default
-            // For now, we'll try to find any matching barangay by partial match
-            const partialMatch = barangays.find(b => 
-              firstTemp.barangay.toLowerCase().includes(b.name.toLowerCase()) ||
-              b.name.toLowerCase().includes(firstTemp.barangay.toLowerCase())
-            );
-            if (partialMatch) {
-              barangayId = partialMatch.id;
-            }
-          }
+          alert(
+            `Cannot create schedule: A route already exists for this location!\n\n` +
+            `Location: ${duplicateBarangay}${duplicateStreet ? `, ${duplicateStreet}` : ''}\n` +
+            `Days: ${duplicateDays}\n\n` +
+            `Please choose a different location or different days.`
+          );
+          continue;
         }
-        
-        // If still no valid barangay_id, we can't create the schedule
-        if (!barangayId || barangayId.trim() === '') {
-          const barangayList = barangays.map(b => b.name).join(', ');
-          alert(`Cannot create schedule: Barangay "${firstTemp.barangay || 'Unknown'}" not found in database.\n\nPlease select a valid barangay from the dropdown or ensure the barangay exists in your database.\n\nAvailable barangays: ${barangayList.length > 100 ? barangayList.substring(0, 100) + '...' : barangayList}`);
-          return;
-        }
+
+        // Extract coordinate arrays from route path
+        const latitudes: number[] = tempRoute.coordinates.map(coord => coord[0]);
+        const longitudes: number[] = tempRoute.coordinates.map(coord => coord[1]);
 
         const scheduleData = {
           id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
           collector_id: collector.id,
-          barangay_id: barangayId,
-          street_ids: streetNames.length > 0 ? streetNames : null,
-          days: selectedDays,
+          barangay_id: tempRoute.barangayId,
+          street_ids: tempRoute.street ? [tempRoute.street] : null,
+          days: tempRoute.days,
           latitude: latitudes.length > 0 ? latitudes : null,
           longitude: longitudes.length > 0 ? longitudes : null,
           truck_no: collector.truckNo || null,
-          barangay_name: barangayNames.length > 0 ? barangayNames : null,
-          street_name: streetNames.length > 0 ? streetNames : null, // Array of street names
+          barangay_name: tempRoute.barangay ? [tempRoute.barangay] : null,
+          street_name: tempRoute.street ? [tempRoute.street] : null,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
         };
         
-        // Debug: Log to verify it's an array
-        console.log('Schedule data being saved:', {
-          ...scheduleData,
-          street_name_type: Array.isArray(scheduleData.street_name) ? 'array' : typeof scheduleData.street_name,
-          street_name_value: scheduleData.street_name
-        });
-        
-        schedulesToCreate.push(scheduleData);
-      }
-
-      // Create schedule from manual entry (if exists and not already in temp storage)
-      if (hasManualEntry && !hasTemporarySchedules) {
-        const selectedBarangayObj = barangays.find(b => b.name === selectedBarangay);
-        
-        if (!selectedBarangayObj || !selectedBarangayObj.id || selectedBarangayObj.id.trim() === '') {
-          alert(`Cannot create schedule: Barangay "${selectedBarangay}" not found or invalid. Please select a valid barangay from the dropdown.`);
-          return;
-        }
-        
-        const barangayId = selectedBarangayObj.id;
-
-        const scheduleData = {
-          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
-          collector_id: collector.id,
-          barangay_id: barangayId,
-          street_ids: selectedStreets.length > 0 ? selectedStreets : null,
-          days: selectedDays,
-          latitude: selectedBarangayCoords?.lat ? [selectedBarangayCoords.lat] : null,
-          longitude: selectedBarangayCoords?.lng ? [selectedBarangayCoords.lng] : null,
-          truck_no: collector.truckNo || null,
-          barangay_name: selectedBarangay ? [selectedBarangay] : null,
-          street_name: selectedStreets.length > 0 ? selectedStreets : null,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        };
         schedulesToCreate.push(scheduleData);
       }
 
@@ -1085,30 +1050,20 @@ export default function Schedules() {
         setSelectedBarangay('');
         setBarangaySearch('');
         setSelectedStreets([]);
-        setStreetSearch('');
         setSelectedBarangayCoords(null);
         setMapSelectedLocation(null);
-        setMapPickMode(false);
-        mapPickModeRef.current = false;
         
-        // Clear temporary schedules and remove markers
-        temporarySchedules.forEach(temp => {
-          if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-            mapRef.current.removeLayer(temp.marker);
+        // Clear temporary routes and remove polylines
+        temporaryRoutes.forEach(route => {
+          if (mapRef.current && mapRef.current.hasLayer(route.polyline)) {
+            mapRef.current.removeLayer(route.polyline);
           }
         });
-        setTemporarySchedules([]);
+        setTemporaryRoutes([]);
         
-        // Remove flag marker
-        if (flagMarkerRef.current && mapRef.current) {
-          mapRef.current.removeLayer(flagMarkerRef.current);
-          flagMarkerRef.current = null;
-          setFlagMarker(null);
-        }
-        
-        // Reset cursor
-        if (mapRef.current) {
-          mapRef.current.getContainer().style.cursor = '';
+        // Reset route mode if active
+        if (routeMode) {
+          cancelRouteMode();
         }
         
         // Reload schedules
@@ -1124,96 +1079,57 @@ export default function Schedules() {
     // Populate form with schedule data
     setEditingScheduleId(schedule.id);
     setSelectedCollector(schedule.collector_id);
-    setSelectedDays(schedule.days || []);
     
-    // Clear existing temporary schedules and markers
-    temporarySchedules.forEach(temp => {
-      if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-        mapRef.current.removeLayer(temp.marker);
+    // Clear existing temporary routes and polylines
+    temporaryRoutes.forEach(route => {
+      if (mapRef.current && mapRef.current.hasLayer(route.polyline)) {
+        mapRef.current.removeLayer(route.polyline);
       }
     });
-    setTemporarySchedules([]);
+    setTemporaryRoutes([]);
     
-    // Populate temporary schedules from schedule data
-    if (schedule.street_name && schedule.barangay_name && schedule.latitude && schedule.longitude) {
-      const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : [schedule.street_name];
-      const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : [schedule.barangay_name];
-      const latitudes = Array.isArray(schedule.latitude) ? schedule.latitude : [schedule.latitude];
-      const longitudes = Array.isArray(schedule.longitude) ? schedule.longitude : [schedule.longitude];
+    // Populate temporary routes from schedule data
+    if (schedule.latitude && schedule.longitude && Array.isArray(schedule.latitude) && schedule.latitude.length > 1) {
+      // It's a route path - recreate polyline
+      const routeCoordinates: [number, number][] = schedule.latitude.map((lat, index) => {
+        const lng = schedule.longitude?.[index];
+        return [lat, lng] as [number, number];
+      }).filter(coord => coord[0] !== undefined && coord[1] !== undefined);
       
-      const tempSchedules: typeof temporarySchedules = [];
-      
-      streetNames.forEach((street, index) => {
-        const barangay = barangayNames[index] || barangayNames[0] || '';
-        const lat = latitudes[index] !== null && latitudes[index] !== undefined ? Number(latitudes[index]) : (latitudes[0] ? Number(latitudes[0]) : 0);
-        const lng = longitudes[index] !== null && longitudes[index] !== undefined ? Number(longitudes[index]) : (longitudes[0] ? Number(longitudes[0]) : 0);
+      if (routeCoordinates.length > 1 && mapRef.current) {
+        const polyline = L.polyline(routeCoordinates, {
+          color: '#3b82f6',
+          weight: 6,
+          opacity: 0.7
+        }).addTo(mapRef.current);
         
-        if (lat && lng && street && barangay && mapRef.current) {
-          const tempId = `${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${index}`;
-          const flagIcon = L.icon({
-            iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-red.png',
-            shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-            iconSize: [25, 41],
-            iconAnchor: [12, 41],
-            popupAnchor: [1, -34],
-            shadowSize: [41, 41]
-          });
-          
-          const marker = L.marker([lat, lng], { icon: flagIcon }).addTo(mapRef.current);
-          
-          const popupContent = document.createElement('div');
-          popupContent.style.cssText = 'text-align: center; padding: 0.5rem;';
-          popupContent.innerHTML = `
-            <strong>${street}</strong><br/>
-            ${barangay}<br/>
-            <button 
-              id="remove-temp-${tempId}"
-              style="
-                margin-top: 0.5rem;
-                padding: 0.25rem 0.5rem;
-                background: #ef4444;
-                color: white;
-                border: none;
-                border-radius: 0.25rem;
-                cursor: pointer;
-                font-size: 0.75rem;
-              "
-            >
-              Remove
-            </button>
-          `;
-          
-          marker.bindPopup(popupContent);
-          
-          setTimeout(() => {
-            const removeBtn = document.getElementById(`remove-temp-${tempId}`);
-            if (removeBtn) {
-              removeBtn.onclick = () => {
-                removeTempScheduleById.current?.(tempId);
-              };
-            }
-          }, 100);
-          
-          const barangayObj = barangays.find(b => b.name === barangay);
-          
-          tempSchedules.push({
-            id: tempId,
-            street: street,
-            barangay: barangay,
-            barangayId: schedule.barangay_id,
-            latitude: lat,
-            longitude: lng,
-            marker: marker,
-          });
+        const barangayName = Array.isArray(schedule.barangay_name) 
+          ? schedule.barangay_name[0] 
+          : schedule.barangay_name || '';
+        
+        const streetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name[0] 
+          : schedule.street_name || '';
+        
+        const tempRoute: TemporaryRoute = {
+          id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          barangay: barangayName,
+          barangayId: schedule.barangay_id,
+          street: streetName || undefined,
+          coordinates: routeCoordinates,
+          polyline: polyline,
+          days: schedule.days || [],
+          startPoint: { lat: routeCoordinates[0][0], lng: routeCoordinates[0][1] },
+          endPoint: { lat: routeCoordinates[routeCoordinates.length - 1][0], lng: routeCoordinates[routeCoordinates.length - 1][1] }
+        };
+        
+        setTemporaryRoutes([tempRoute]);
+        
+        // Set barangay
+        if (barangayName) {
+          setSelectedBarangay(barangayName);
+          setBarangaySearch(barangayName);
         }
-      });
-      
-      setTemporarySchedules(tempSchedules);
-      
-      // Set first barangay
-      if (barangayNames.length > 0) {
-        setSelectedBarangay(barangayNames[0]);
-        setBarangaySearch(barangayNames[0]);
       }
     }
     
@@ -1226,33 +1142,23 @@ export default function Schedules() {
     // Reset form
     setSelectedCollector('');
     setSelectedDays([]);
-    setSelectedBarangay('');
-    setBarangaySearch('');
-    setSelectedStreets([]);
-    setStreetSearch('');
-    setSelectedBarangayCoords(null);
+        setSelectedBarangay('');
+        setBarangaySearch('');
+        setSelectedStreets([]);
+        setSelectedBarangayCoords(null);
     setMapSelectedLocation(null);
-    setMapPickMode(false);
-    mapPickModeRef.current = false;
     
-    // Clear temporary schedules and remove markers
-    temporarySchedules.forEach(temp => {
-      if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-        mapRef.current.removeLayer(temp.marker);
+    // Clear temporary routes and remove polylines
+    temporaryRoutes.forEach(route => {
+      if (mapRef.current && mapRef.current.hasLayer(route.polyline)) {
+        mapRef.current.removeLayer(route.polyline);
       }
     });
-    setTemporarySchedules([]);
+    setTemporaryRoutes([]);
     
-    // Remove flag marker
-    if (flagMarkerRef.current && mapRef.current) {
-      mapRef.current.removeLayer(flagMarkerRef.current);
-      flagMarkerRef.current = null;
-      setFlagMarker(null);
-    }
-    
-    // Reset cursor
-    if (mapRef.current) {
-      mapRef.current.getContainer().style.cursor = '';
+    // Cancel route mode if active
+    if (routeMode) {
+      cancelRouteMode();
     }
   };
 
@@ -1299,27 +1205,24 @@ export default function Schedules() {
                   const newCollectorId = e.target.value;
                   // Full reset when collector changes
                   if (selectedCollector && selectedCollector !== newCollectorId) {
-                    // Clear all temporary schedules and remove all markers
-                    temporarySchedules.forEach(temp => {
-                      if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-                        mapRef.current.removeLayer(temp.marker);
+                    // Clear all temporary routes and remove all polylines
+                    temporaryRoutes.forEach(route => {
+                      if (mapRef.current && mapRef.current.hasLayer(route.polyline)) {
+                        mapRef.current.removeLayer(route.polyline);
                       }
                     });
-                    setTemporarySchedules([]);
+                    setTemporaryRoutes([]);
                     
                     // Clear form fields
-                    setSelectedBarangay('');
-                    setBarangaySearch('');
-                    setSelectedStreets([]);
-                    setStreetSearch('');
-                    setSelectedBarangayCoords(null);
+        setSelectedBarangay('');
+        setBarangaySearch('');
+        setSelectedStreets([]);
+        setSelectedBarangayCoords(null);
                     setMapSelectedLocation(null);
                     
-                    // Remove flag marker
-                    if (flagMarkerRef.current && mapRef.current) {
-                      mapRef.current.removeLayer(flagMarkerRef.current);
-                      flagMarkerRef.current = null;
-                      setFlagMarker(null);
+                    // Cancel route mode if active
+                    if (routeMode) {
+                      cancelRouteMode();
                     }
                   }
                   setSelectedCollector(newCollectorId);
@@ -1336,259 +1239,151 @@ export default function Schedules() {
               </select>
             </div>
 
-            {/* Day Selection */}
+            {/* Route Creation Button */}
             <div className="form-group">
-              <label>Collection Days *</label>
-              <div className="days-grid">
-                {DAYS_OF_WEEK.map(day => {
-                  const scheduledDays = getScheduledDaysForCollector();
-                  const isScheduled = scheduledDays.includes(day);
-                  const isChecked = selectedDays.includes(day);
-                  // Disable only if the day is scheduled elsewhere AND not currently checked
-                  // This allows unchecking days that are part of the current schedule being edited
-                  const isDisabled = selectedCollector && isScheduled && !isChecked;
-                  
-                  return (
-                    <label 
-                      key={day} 
-                      className={`day-checkbox ${isDisabled ? 'day-checkbox-disabled' : ''}`}
-                      style={isDisabled ? {
-                        opacity: 0.6,
-                        cursor: 'not-allowed',
-                        backgroundColor: '#f3f4f6',
-                        borderColor: '#d1d5db'
-                      } : {}}
-                      title={isDisabled ? `This day is already scheduled for ${selectedCollector ? collectors.find(c => c.id === selectedCollector)?.name : 'this collector'}` : ''}
-                    >
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        disabled={isDisabled}
-                        onChange={() => handleDayToggle(day)}
-                      />
-                      <span style={isDisabled ? { color: '#9ca3af' } : {}}>{day}</span>
-                      {isDisabled && (
-                        <span style={{
-                          fontSize: '0.625rem',
-                          color: '#ef4444',
-                          marginLeft: '0.25rem',
-                          fontWeight: 600
-                        }} title="Already scheduled for this collector">
-                          *
-                        </span>
-                      )}
-                    </label>
-                  );
-                })}
-              </div>
-              {selectedCollector && getScheduledDaysForCollector().length > 0 && (
-                <small style={{ color: '#6b7280', fontSize: '0.75rem', marginTop: '0.25rem' }}>
-                  Days marked with * are already scheduled for this collector
-                </small>
+              <label>Route Creation</label>
+              {!routeMode ? (
+                <button
+                  type="button"
+                  onClick={startRouteMode}
+                  className="btn btn-secondary"
+                  style={{ width: '100%', marginBottom: '1rem' }}
+                >
+                  🛣️ Start Route
+                </button>
+              ) : (
+                <>
+                  <button
+                    type="button"
+                    onClick={cancelRouteMode}
+                    className="btn btn-warning"
+                    style={{ width: '100%', marginBottom: '1rem' }}
+                  >
+                    Cancel Route Creation
+                  </button>
+                  <div style={{ 
+                    padding: '0.75rem', 
+                    background: '#fef3c7', 
+                    border: '1px solid #fbbf24',
+                    borderRadius: '0.375rem',
+                    marginBottom: '1rem',
+                    fontSize: '0.875rem',
+                    color: '#92400e'
+                  }}>
+                    {!routeStartPoint ? (
+                      'Click on the map to set the START point of the route'
+                    ) : !routeEndPoint ? (
+                      'Click on the map to set the END point of the route'
+                    ) : (
+                      'Route fetched! Please complete the route metadata in the modal.'
+                    )}
+                  </div>
+                </>
               )}
-            </div>
-
-            {/* Map Pick Button */}
-            <div className="form-group">
-              <label>Location Selection</label>
-              <button
-                type="button"
-                onClick={toggleMapPickMode}
-                className={`btn ${mapPickMode ? 'btn-warning' : 'btn-secondary'}`}
-                style={{ width: '100%', marginBottom: '1rem' }}
-              >
-                {mapPickMode ? '📍 Click on map to drop flag (Press F to toggle)' : '🗺️ Pick Location on Map (Press F)'}
-              </button>
-              {mapPickMode && (
-                <div style={{ 
-                  padding: '0.75rem', 
-                  background: '#fef3c7', 
-                  border: '1px solid #fbbf24',
-                  borderRadius: '0.375rem',
-                  marginBottom: '1rem',
-                  fontSize: '0.875rem',
-                  color: '#92400e'
-                }}>
-                  Click on the map to drop a flag at the collection location. Press F again to cancel.
-                </div>
-              )}
-              {(mapSelectedLocation || temporarySchedules.length > 0) && (
+              {temporaryRoutes.length > 0 && (
                 <button
                   type="button"
                   onClick={() => {
-                    setMapSelectedLocation(null);
-                    setSelectedBarangay('');
-                    setBarangaySearch('');
-                    setSelectedStreets([]);
-                    setSelectedBarangayCoords(null);
-                    
-                    // Remove all temporary schedule markers
-                    temporarySchedules.forEach(temp => {
-                      if (mapRef.current && mapRef.current.hasLayer(temp.marker)) {
-                        mapRef.current.removeLayer(temp.marker);
+                    temporaryRoutes.forEach(route => {
+                      if (mapRef.current && mapRef.current.hasLayer(route.polyline)) {
+                        mapRef.current.removeLayer(route.polyline);
                       }
                     });
-                    setTemporarySchedules([]);
-                    
-                    // Remove flag marker
-                    if (flagMarkerRef.current && mapRef.current) {
-                      mapRef.current.removeLayer(flagMarkerRef.current);
-                      flagMarkerRef.current = null;
-                      setFlagMarker(null);
-                    }
+                    setTemporaryRoutes([]);
                   }}
                   className="btn btn-secondary btn-small"
                   style={{ width: '100%', marginTop: '0.5rem' }}
                 >
-                  Clear All Flags ({temporarySchedules.length})
+                  Clear All Routes ({temporaryRoutes.length})
                 </button>
               )}
             </div>
 
-            {/* Combined Barangay and Street Tags Display */}
+            {/* Routes Display */}
             <div className="form-group">
-              <label>Location (Barangay / Street) *</label>
-              {(() => {
-                // Get all temporary schedules (each has both barangay and street - they stay separate in storage)
-                const allLocations = temporarySchedules.map(temp => ({
-                  id: temp.id,
-                  barangay: temp.barangay,
-                  street: temp.street,
-                  barangayId: temp.barangayId,
-                  coordinates: { lat: temp.latitude, lng: temp.longitude },
-                  marker: temp.marker
-                }));
-                
-                // Add manual entries if they exist (without temporary schedules)
-                if (selectedBarangay && temporarySchedules.length === 0 && selectedStreets.length > 0) {
-                  selectedStreets.forEach(street => {
-                    allLocations.push({
-                      id: `manual-${street}-${Date.now()}`,
-                      barangay: selectedBarangay,
-                      street: street,
-                      barangayId: undefined,
-                      coordinates: selectedBarangayCoords || null,
-                      marker: null
-                    });
-                  });
-                }
-                
-                if (allLocations.length === 0) {
-                  return (
-                    <div style={{ 
-                      color: '#9ca3af',
-                      fontSize: '0.875rem'
-                    }}>
-                      Drop flags on the map to add locations
-                    </div>
-                  );
-                }
-                
-                return (
-                  <div className="location-tags" style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
-                    {allLocations.map((location, index) => {
-                      return (
-                        <span 
-                          key={location.id || index} 
-                          className="location-tag"
-                          style={{
-                            display: 'inline-flex',
+              <label>Created Routes *</label>
+              {temporaryRoutes.length === 0 ? (
+                <div style={{ 
+                  color: '#9ca3af',
+                  fontSize: '0.875rem'
+                }}>
+                  Create routes by clicking "Start Route" and selecting start/end points on the map
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {temporaryRoutes.map((route, index) => (
+                    <div
+                      key={route.id}
+                      style={{
+                        padding: '0.75rem',
+                        border: '1px solid #e5e7eb',
+                        borderRadius: '0.375rem',
+                        backgroundColor: '#f9fafb'
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 500, marginBottom: '0.25rem' }}>
+                            Route {index + 1}: {route.barangay}
+                          </div>
+                          {route.street && (
+                            <div style={{ fontSize: '0.875rem', color: '#6b7280', marginBottom: '0.25rem' }}>
+                              {route.street}
+                            </div>
+                          )}
+                          <div style={{ 
+                            fontSize: '0.75rem', 
+                            color: '#9ca3af',
+                            marginBottom: '0.5rem',
+                            display: 'flex',
                             alignItems: 'center',
                             gap: '0.5rem',
-                            padding: '0.375rem 0.5rem 0.375rem 0.75rem',
-                            backgroundColor: 'transparent',
-                            border: '1px solid #e5e7eb',
-                            borderRadius: '0.375rem',
-                            color: '#6366f1',
-                            cursor: location.coordinates ? 'pointer' : 'default',
-                            transition: 'all 0.2s',
+                            flexWrap: 'wrap'
+                          }}>
+                            <span>Days: {route.days.join(', ')}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingRouteId(route.id);
+                                setEditingRouteDays([...route.days]);
+                              }}
+                              style={{
+                                background: '#3b82f6',
+                                border: 'none',
+                                color: 'white',
+                                cursor: 'pointer',
+                                fontSize: '0.75rem',
+                                padding: '0.25rem 0.5rem',
+                                borderRadius: '0.25rem',
+                                fontWeight: 500
+                              }}
+                            >
+                              Edit Days
+                            </button>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeTempRoute(route.id)}
+                          style={{
+                            background: 'transparent',
+                            border: 'none',
+                            color: '#ef4444',
+                            cursor: 'pointer',
+                            fontSize: '1.25rem',
+                            padding: '0',
+                            lineHeight: 1,
+                            fontWeight: 'bold',
+                            marginLeft: '0.5rem'
                           }}
-                          onClick={() => {
-                            if (location.coordinates) {
-                              setSelectedBarangayCoords(location.coordinates);
-                              setSelectedBarangay(location.barangay);
-                              // Center map on this location's coordinates
-                              if (mapRef.current && location.coordinates) {
-                                mapRef.current.setView([location.coordinates.lat, location.coordinates.lng], 15);
-                              }
-                            }
-                          }}
-                          onMouseEnter={(e) => {
-                            if (location.coordinates) {
-                              e.currentTarget.style.backgroundColor = '#f3f4f6';
-                            }
-                          }}
-                          onMouseLeave={(e) => {
-                            e.currentTarget.style.backgroundColor = 'transparent';
-                          }}
-                          title={location.coordinates ? `Click to view: ${location.barangay} - ${location.street} (${location.coordinates.lat}, ${location.coordinates.lng})` : `${location.barangay} - ${location.street}`}
                         >
-                          <span style={{ fontWeight: 500 }}>{location.barangay}</span>
-                          <span style={{ color: '#9ca3af' }}>/</span>
-                          <span>{location.street}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              // Remove from temporary schedules if it exists there (separate storage)
-                              if (temporarySchedules.some(t => t.id === location.id)) {
-                                setTemporarySchedules(prev => {
-                                  const remaining = prev.filter(t => t.id !== location.id);
-                                  // Remove marker from map
-                                  if (location.marker && mapRef.current && mapRef.current.hasLayer(location.marker)) {
-                                    mapRef.current.removeLayer(location.marker);
-                                  }
-                                  return remaining;
-                                });
-                                // Also remove from selectedStreets if it exists
-                                setSelectedStreets(prev => prev.filter(s => s !== location.street));
-                              } else {
-                                // Manual entry - just remove from selectedStreets
-                                setSelectedStreets(prev => prev.filter(s => s !== location.street));
-                                // If this was the last street, clear barangay too
-                                const remainingStreets = selectedStreets.filter(s => s !== location.street);
-                                if (remainingStreets.length === 0) {
-                                  setSelectedBarangay('');
-                                  setBarangaySearch('');
-                                  setSelectedBarangayCoords(null);
-                                }
-                              }
-                            }}
-                            style={{
-                              background: 'transparent',
-                              border: 'none',
-                              color: '#6366f1',
-                              cursor: 'pointer',
-                              fontSize: '1.25rem',
-                              padding: '0',
-                              lineHeight: 1,
-                              display: 'flex',
-                              alignItems: 'center',
-                              justifyContent: 'center',
-                              fontWeight: 'bold',
-                              transition: 'all 0.2s',
-                              borderRadius: '50%',
-                              width: '20px',
-                              height: '20px',
-                              flexShrink: 0,
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.color = '#4f46e5';
-                              e.currentTarget.style.backgroundColor = '#e0e7ff';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.color = '#6366f1';
-                              e.currentTarget.style.backgroundColor = 'transparent';
-                            }}
-                          >
-                            ×
-                          </button>
-                        </span>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
+                          ×
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: '0.5rem' }}>
@@ -1841,6 +1636,239 @@ export default function Schedules() {
           </>
         )}
       </div>
+
+      {/* Route Metadata Modal */}
+      {showRouteModal && pendingRoute && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={() => {
+            // Don't close on backdrop click - require explicit cancel
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '0.5rem',
+              padding: '1.5rem',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Route Metadata</h2>
+            
+            {/* Collection Days */}
+            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+              <label>Collection Days *</label>
+              <div className="days-grid">
+                {DAYS_OF_WEEK.map(day => {
+                  const isChecked = routeModalDays.includes(day);
+                  return (
+                    <label 
+                      key={day} 
+                      className="day-checkbox"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.75rem',
+                        border: `2px solid ${isChecked ? '#3b82f6' : '#e5e7eb'}`,
+                        borderRadius: '0.375rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        background: isChecked ? '#eef2ff' : 'white',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setRouteModalDays(prev => prev.filter(d => d !== day));
+                          } else {
+                            setRouteModalDays(prev => [...prev, day]);
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                      <span style={{ 
+                        color: isChecked ? '#3b82f6' : '#374151',
+                        fontWeight: isChecked ? 600 : 400,
+                        fontSize: '0.875rem'
+                      }}>
+                        {day}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowRouteModal(false);
+                  cancelRouteMode();
+                  setPendingRoute(null);
+                  setRouteModalDays([]);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSaveRouteFromModal}
+                className="btn btn-primary"
+              >
+                Save Route
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Route Days Modal */}
+      {editingRouteId && (
+        <div
+          style={{
+            position: 'fixed',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.5)',
+            zIndex: 10000,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '20px',
+          }}
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              setEditingRouteId(null);
+              setEditingRouteDays([]);
+            }
+          }}
+        >
+          <div
+            style={{
+              backgroundColor: 'white',
+              borderRadius: '0.5rem',
+              padding: '1.5rem',
+              maxWidth: '500px',
+              width: '100%',
+              maxHeight: '80vh',
+              overflowY: 'auto',
+              boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 style={{ marginTop: 0, marginBottom: '1.5rem' }}>Edit Collection Days</h2>
+            
+            {/* Collection Days */}
+            <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+              <label>Collection Days *</label>
+              <div className="days-grid">
+                {DAYS_OF_WEEK.map(day => {
+                  const isChecked = editingRouteDays.includes(day);
+                  return (
+                    <label 
+                      key={day} 
+                      className="day-checkbox"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.75rem',
+                        border: `2px solid ${isChecked ? '#3b82f6' : '#e5e7eb'}`,
+                        borderRadius: '0.375rem',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s',
+                        background: isChecked ? '#eef2ff' : 'white',
+                      }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={() => {
+                          if (isChecked) {
+                            setEditingRouteDays(prev => prev.filter(d => d !== day));
+                          } else {
+                            setEditingRouteDays(prev => [...prev, day]);
+                          }
+                        }}
+                        style={{ display: 'none' }}
+                      />
+                      <span style={{ 
+                        color: isChecked ? '#3b82f6' : '#374151',
+                        fontWeight: isChecked ? 600 : 400,
+                        fontSize: '0.875rem'
+                      }}>
+                        {day}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={() => {
+                  setEditingRouteId(null);
+                  setEditingRouteDays([]);
+                }}
+                className="btn btn-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (editingRouteDays.length === 0) {
+                    alert('Please select at least one collection day');
+                    return;
+                  }
+                  
+                  // Update the route's days
+                  setTemporaryRoutes(prev => prev.map(route => {
+                    if (route.id === editingRouteId) {
+                      return { ...route, days: editingRouteDays };
+                    }
+                    return route;
+                  }));
+                  
+                  setEditingRouteId(null);
+                  setEditingRouteDays([]);
+                }}
+                className="btn btn-primary"
+              >
+                Save Days
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

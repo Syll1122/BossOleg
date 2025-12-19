@@ -25,6 +25,8 @@ import NotificationBell from '../components/NotificationBell';
 import { initializeResidentNotifications, checkReportStatusChanges } from '../services/residentNotificationService';
 import RefreshButton from '../components/RefreshButton';
 import ThemeToggle from '../components/ThemeToggle';
+import { databaseService } from '../services/database-supabase';
+import { supabase } from '../services/supabase';
 
 interface ScheduleItem {
   day: string;
@@ -32,87 +34,32 @@ interface ScheduleItem {
   street: string;
 }
 
+// Day abbreviations mapping
+const DAY_ABBREVIATIONS: { [key: string]: string } = {
+  'Monday': 'Mon',
+  'Tuesday': 'Tue',
+  'Wednesday': 'Wed',
+  'Thursday': 'Thu',
+  'Friday': 'Fri',
+  'Saturday': 'Sat',
+  'Sunday': 'Sun'
+};
+
+const DAY_NAMES: { [key: string]: string } = {
+  'Mon': 'Monday',
+  'Tue': 'Tuesday',
+  'Wed': 'Wednesday',
+  'Thu': 'Thursday',
+  'Fri': 'Friday',
+  'Sat': 'Saturday',
+  'Sun': 'Sunday'
+};
+
 const Home: React.FC = () => {
   const history = useHistory();
   const { user } = useCurrentUser();
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
-  const [showEcoFriendlyModal, setShowEcoFriendlyModal] = useState(false);
-  const [showSustainableModal, setShowSustainableModal] = useState(false);
-  const [ecoSlideIndex, setEcoSlideIndex] = useState(0);
-  const [sustainableSlideIndex, setSustainableSlideIndex] = useState(0);
-
-  const ecoSlides = [
-    {
-      title: 'Green Fleet in Action',
-      description: 'Low-emission trucks serving downtown routes with optimized stop counts reduce fuel and noise.',
-      image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=900&h=600&fit=crop&q=80&auto=format',
-      showImage: true,
-    },
-    {
-      title: 'Solar-Powered Recycling',
-      description: 'Community drop-off hubs with solar roofs can run compactors and lighting without additional energy costs.',
-      image: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&q=80&sat=-50',
-    },
-    {
-      title: 'Water-Saving Cleanups',
-      description: 'Wash reusable containers in collected rainwater barrels to conserve tap water for essential needs.',
-      image: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=600&h=400&fit=crop&q=80',
-    },
-  ];
-
-  const sustainableSpotlights = [
-    {
-      title: 'Circular Compost Hub',
-      description: 'Neighborhood composting hubs transform organic waste into soil for urban gardens.',
-      image: 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=600&h=400&fit=crop&q=80',
-    },
-    {
-      title: 'Electric Fleet Pilot',
-      description: 'Pilot programs with electric trucks cut fleet emissions by up to 60% over diesel routes.',
-      image: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&h=400&fit=crop&q=80',
-    },
-    {
-      title: 'Rainwater Wash Bays',
-      description: 'Depots that wash collection trucks with captured rainwater save thousands of liters monthly.',
-      image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=900&h=600&fit=crop&q=80&auto=format',
-    },
-    {
-      title: 'Community Reuse Hubs',
-      description: 'Local hubs collect reusables and redistribute them, reducing landfill dependency.',
-      image: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&q=80&hue=90',
-    },
-  ];
-
-  const cycleSlide = (
-    direction: 'next' | 'prev',
-    itemsLength: number,
-    setter: React.Dispatch<React.SetStateAction<number>>
-  ) => {
-    setter((current) => {
-      const nextIndex =
-        direction === 'next'
-          ? (current + 1) % itemsLength
-          : (current - 1 + itemsLength) % itemsLength;
-      return nextIndex;
-    });
-  };
-
-  // Auto-play sliders with different timings
-  useEffect(() => {
-    const ecoInterval = setInterval(() => {
-      cycleSlide('next', ecoSlides.length, setEcoSlideIndex);
-    }, 5000); // 5 seconds for eco-friendly
-    
-    const sustainableInterval = setInterval(() => {
-      cycleSlide('next', sustainableSpotlights.length, setSustainableSlideIndex);
-    }, 1000); // 1 second for sustainable
-    
-    return () => {
-      clearInterval(ecoInterval);
-      clearInterval(sustainableInterval);
-    };
-  }, [ecoSlides.length, sustainableSpotlights.length]);
 
   // All weekly schedules
   const allSchedules: ScheduleItem[] = [
@@ -134,13 +81,163 @@ const Home: React.FC = () => {
   // Get schedules for today
   const getTodaySchedules = (): ScheduleItem[] => {
     const today = getCurrentDay();
-    return allSchedules.filter(schedule => schedule.day === today);
+    return residentSchedules.filter(schedule => schedule.day === today);
   };
 
   // Get schedules for other days
   const getOtherDaySchedules = (): ScheduleItem[] => {
     const today = getCurrentDay();
-    return allSchedules.filter(schedule => schedule.day !== today);
+    return residentSchedules.filter(schedule => schedule.day !== today);
+  };
+
+  // Load resident schedules from database
+  const loadResidentSchedules = async () => {
+    if (user?.role !== 'resident') return;
+    
+    setIsLoadingSchedules(true);
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      if (!userId) {
+        console.log('No user ID found');
+        setIsLoadingSchedules(false);
+        return;
+      }
+
+      // Get resident's barangay from account
+      const account = await databaseService.getAccountById(userId);
+      console.log('Resident account:', account);
+
+      // Get all schedules (we'll filter by barangay if available, otherwise show all)
+      const { data: allSchedulesData, error: fetchError } = await supabase
+        .from('collection_schedules')
+        .select('*');
+      
+      if (fetchError) {
+        console.error('Error fetching schedules:', fetchError);
+        throw fetchError;
+      }
+      
+      console.log('All schedules in database:', allSchedulesData);
+      
+      // Filter by barangay if resident has one set, otherwise show all schedules
+      let schedules = allSchedulesData || [];
+      
+      if (account?.barangay && schedules.length > 0) {
+        console.log(`Resident barangay: ${account.barangay}`);
+        console.log(`Filtering ${schedules.length} schedules for barangay: ${account.barangay}`);
+        const filteredSchedules = await databaseService.getSchedulesByBarangay(account.barangay);
+        console.log('Found schedules after filtering:', filteredSchedules);
+        
+        // Use filtered schedules if matches found, otherwise show all
+        if (filteredSchedules.length > 0) {
+          schedules = filteredSchedules;
+        } else {
+          console.log('No schedules matched barangay, showing all schedules');
+          // Keep all schedules
+        }
+      } else {
+        if (!account?.barangay) {
+          console.log('No barangay set for resident, showing all schedules');
+        } else {
+          console.log('No schedules found in database');
+        }
+      }
+      
+      // Convert schedules to ScheduleItem format
+      const scheduleMap = new Map<string, ScheduleItem>();
+      
+      console.log(`Processing ${schedules.length} schedules to convert to schedule items...`);
+      
+      schedules.forEach((schedule, index) => {
+        console.log(`\nProcessing schedule ${index + 1}:`, {
+          id: schedule.id,
+          days: schedule.days,
+          street_name: schedule.street_name,
+          barangay_name: schedule.barangay_name
+        });
+        
+        const days = Array.isArray(schedule.days) ? schedule.days : [];
+        const streetNames = Array.isArray(schedule.street_name) 
+          ? schedule.street_name 
+          : schedule.street_name ? [schedule.street_name] : [];
+        
+        console.log(`  Parsed - Days: [${days.join(', ')}], Streets: [${streetNames.join(', ')}]`);
+        
+        if (days.length === 0) {
+          console.log(`  Skipping schedule - no days`);
+          return;
+        }
+        
+        days.forEach(dayAbbr => {
+          const dayName = DAY_NAMES[dayAbbr] || dayAbbr;
+          
+          // If multiple streets, create entries for each
+          if (streetNames.length > 0) {
+            streetNames.forEach(street => {
+              if (street) {
+                const key = `${dayName}-${street}`;
+                if (!scheduleMap.has(key)) {
+                  // Default time (can be enhanced later with actual time from schedule)
+                  const time = '7:00 AM'; // Default time
+                  scheduleMap.set(key, {
+                    day: dayName,
+                    time: time,
+                    street: street
+                  });
+                  console.log(`  ✓ Added: ${dayName} - ${street}`);
+                } else {
+                  console.log(`  ⊗ Skipped duplicate: ${dayName} - ${street}`);
+                }
+              }
+            });
+          } else {
+            // If no street name, use barangay name
+            const barangayName = Array.isArray(schedule.barangay_name) 
+              ? schedule.barangay_name[0] 
+              : schedule.barangay_name || account?.barangay || 'Unknown Location';
+            
+            const key = `${dayName}-${barangayName}`;
+            if (!scheduleMap.has(key)) {
+              const time = '7:00 AM';
+              scheduleMap.set(key, {
+                day: dayName,
+                time: time,
+                street: barangayName
+              });
+              console.log(`  ✓ Added: ${dayName} - ${barangayName} (no street)`);
+            } else {
+              console.log(`  ⊗ Skipped duplicate: ${dayName} - ${barangayName}`);
+            }
+          }
+        });
+      });
+      
+      console.log(`\nTotal unique schedule items created: ${scheduleMap.size}`);
+
+      // Convert map to array and sort by day order, with today's schedules first
+      const allDays = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+      const today = getCurrentDay();
+      
+      const sortedSchedules = Array.from(scheduleMap.values()).sort((a, b) => {
+        // If one is today and the other is not, today comes first
+        const aIsToday = a.day === today;
+        const bIsToday = b.day === today;
+        
+        if (aIsToday && !bIsToday) return -1; // a (today) comes before b
+        if (!aIsToday && bIsToday) return 1;  // b (today) comes before a
+        
+        // If both are today or neither is today, sort by day order
+        return allDays.indexOf(a.day) - allDays.indexOf(b.day);
+      });
+
+      setResidentSchedules(sortedSchedules);
+    } catch (error) {
+      console.error('Error loading resident schedules:', error);
+      setResidentSchedules([]);
+    } finally {
+      setIsLoadingSchedules(false);
+    }
   };
 
   // Initialize resident notifications on mount (for residents only)
@@ -152,6 +249,13 @@ const Home: React.FC = () => {
       }
     };
     initNotifications();
+  }, [user]);
+
+  // Load schedules when user is available
+  useEffect(() => {
+    if (user?.role === 'resident') {
+      loadResidentSchedules();
+    }
   }, [user]);
 
   // Monitor report status changes periodically (for residents only)
@@ -180,6 +284,7 @@ const Home: React.FC = () => {
     if (userId && user?.role === 'resident') {
       await initializeResidentNotifications(userId);
       await checkReportStatusChanges(userId);
+      await loadResidentSchedules();
     }
   };
 
@@ -432,31 +537,55 @@ const Home: React.FC = () => {
                 </button>
               </div>
 
-              {[
-                { day: 'Monday', time: '7:00 AM', street: 'Military Road' },
-                { day: 'Wednesday', time: '7:30 AM', street: 'Leyte Gulf St.' },
-                { day: 'Friday', time: '8:00 AM', street: 'Commodore Rd.' },
-              ].map((item) => (
-                <div
-                  key={item.day}
-                  style={{
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center',
-                    padding: '0.7rem 0',
-                    borderBottom: '1px solid var(--app-border)',
-                  }}
-                >
-                  <div>
-                    <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>{item.day}</div>
-                    <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
-                  </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: 'var(--app-text-primary)' }}>
-                    <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem', color: '#22c55e', filter: 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.5))' }} />
-                    <span style={{ color: '#22c55e', fontWeight: 600 }}>{item.time}</span>
-                  </div>
+              {isLoadingSchedules ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
+                  Loading schedule...
                 </div>
-              ))}
+              ) : residentSchedules.length === 0 ? (
+                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
+                  No collection schedule available. Please update your barangay in your profile.
+                </div>
+              ) : (
+                (() => {
+                  const today = getCurrentDay();
+                  const todaySchedules = residentSchedules.filter(s => s.day === today);
+                  const otherSchedules = residentSchedules.filter(s => s.day !== today);
+                  
+                  // Show today's schedules first, then others (up to 3 total, prioritizing today)
+                  const displaySchedules = [...todaySchedules, ...otherSchedules].slice(0, 3);
+                  
+                  return displaySchedules.map((item, index) => {
+                    const isToday = item.day === today;
+                    return (
+                      <div
+                        key={`${item.day}-${item.street}-${index}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.7rem 0',
+                          borderBottom: index < displaySchedules.length - 1 ? '1px solid var(--app-border)' : 'none',
+                        }}
+                      >
+                        <div>
+                          <div style={{ 
+                            fontSize: '0.85rem', 
+                            fontWeight: 600, 
+                            color: isToday ? '#22c55e' : 'var(--app-text-primary)' 
+                          }}>
+                            {item.day} {isToday && '(Today)'}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: 'var(--app-text-primary)' }}>
+                          <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem', color: '#22c55e', filter: isToday ? 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.5))' : 'none' }} />
+                          <span style={{ color: '#22c55e', fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
+                        </div>
+                      </div>
+                    );
+                  });
+                })()
+              )}
             </div>
             
             {/* Decorative Elements in the Gap */}
@@ -979,36 +1108,53 @@ const Home: React.FC = () => {
                       <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--app-text-primary)' }}>Full Weekly Schedule</h3>
                   </IonText>
                 </div>
-                {allSchedules.map((item, index) => {
-                  const isToday = item.day === getCurrentDay();
-                  return (
-                    <div
-                      key={item.day}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '0.7rem 0',
-                        borderBottom: index < allSchedules.length - 1 ? '1px solid var(--app-border)' : 'none',
-                        backgroundColor: isToday ? 'var(--app-surface-elevated)' : 'transparent',
-                        borderRadius: isToday ? '8px' : '0',
-                        paddingLeft: isToday ? '0.75rem' : '0',
-                        paddingRight: isToday ? '0.75rem' : '0',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
-                          {item.day} {isToday && '(Today)'}
+                {(() => {
+                  const today = getCurrentDay();
+                  const todaySchedules = residentSchedules.filter(s => s.day === today);
+                  const otherSchedules = residentSchedules.filter(s => s.day !== today);
+                  
+                  // Combine: today's schedules first, then others
+                  const sortedForDisplay = [...todaySchedules, ...otherSchedules];
+                  
+                  if (sortedForDisplay.length === 0) {
+                    return (
+                      <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
+                        No collection schedule available. Please update your barangay in your profile.
+                      </div>
+                    );
+                  }
+                  
+                  return sortedForDisplay.map((item, index) => {
+                    const isToday = item.day === today;
+                    return (
+                      <div
+                        key={`${item.day}-${item.street}-${index}`}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '0.7rem 0',
+                          borderBottom: index < sortedForDisplay.length - 1 ? '1px solid var(--app-border)' : 'none',
+                          backgroundColor: isToday ? 'var(--app-surface-elevated)' : 'transparent',
+                          borderRadius: isToday ? '8px' : '0',
+                          paddingLeft: isToday ? '0.75rem' : '0',
+                          paddingRight: isToday ? '0.75rem' : '0',
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
+                            {item.day} {isToday && '(Today)'}
+                          </div>
+                          <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
                         </div>
-                        <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
+                          <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
+                          <span style={{ fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
-                        <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
-                        <span style={{ fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
             </div>
           </div>
