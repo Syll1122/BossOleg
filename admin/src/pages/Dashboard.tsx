@@ -1,10 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { getDashboardStats, DashboardStats } from '../services/api';
 import LeafLogo from '../components/LeafLogo';
 import './Dashboard.css';
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -88,7 +89,8 @@ export default function Dashboard() {
       icon: '⏳', 
       bgColor: 'var(--yellow-bg)',
       hoverColor: 'var(--yellow-bg-hover)',
-      accentColor: 'var(--accent-yellow)'
+      accentColor: 'var(--accent-yellow)',
+      onClick: () => navigate('/reports?filter=pending')
     },
     { 
       label: 'Resolved Reports', 
@@ -96,7 +98,8 @@ export default function Dashboard() {
       icon: '✅', 
       bgColor: 'var(--green-bg)',
       hoverColor: 'var(--green-bg-hover)',
-      accentColor: 'var(--success)'
+      accentColor: 'var(--success)',
+      onClick: () => navigate('/reports?filter=resolved')
     },
     { 
       label: 'Active Trucks', 
@@ -113,6 +116,15 @@ export default function Dashboard() {
       bgColor: 'var(--gray-bg)',
       hoverColor: '#e5e7eb',
       accentColor: 'var(--secondary)'
+    },
+    { 
+      label: "Collectors' Attendance", 
+      value: '-', 
+      icon: '👤', 
+      bgColor: 'var(--indigo-bg, #eef2ff)',
+      hoverColor: 'var(--indigo-bg-hover, #e0e7ff)',
+      accentColor: 'var(--accent-indigo, #6366f1)',
+      onClick: () => navigate('/collectors-attendance')
     },
   ];
 
@@ -149,8 +161,10 @@ export default function Dashboard() {
             style={{
               '--card-bg': card.bgColor,
               '--card-hover': card.hoverColor,
-              '--accent': card.accentColor
+              '--accent': card.accentColor,
+              cursor: card.onClick ? 'pointer' : 'default'
             } as React.CSSProperties}
+            onClick={card.onClick}
           >
             <div className="stat-icon">
               {card.icon}

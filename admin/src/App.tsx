@@ -10,6 +10,9 @@ import CreateUser from './pages/CreateUser';
 import Schedules from './pages/Schedules';
 import Reports from './pages/Reports';
 import Trucks from './pages/Trucks';
+import MissedCollections from './pages/MissedCollections';
+import CollectorsAttendance from './pages/CollectorsAttendance';
+import CollectionStatus from './pages/CollectionStatus';
 import Layout from './components/Layout';
 
 // Redirect component using useNavigate hook
@@ -68,6 +71,9 @@ function App() {
                   <Route path="/schedules" element={<Schedules />} />
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/trucks" element={<Trucks />} />
+                  <Route path="/missed-collections" element={<MissedCollections />} />
+                  <Route path="/collectors-attendance" element={<CollectorsAttendance />} />
+                  <Route path="/collection-status" element={<CollectionStatus />} />
                 </Routes>
               </Layout>
             ) : (

@@ -202,6 +202,7 @@ export interface DashboardStats {
   activeTrucks: number;
   totalTrucks: number;
   pendingRegistrations: number;
+  missedCollectionReports: number;
 }
 
 export async function getDashboardStats(): Promise<DashboardStats> {
@@ -226,6 +227,7 @@ export async function getDashboardStats(): Promise<DashboardStats> {
     activeTrucks: trucks.filter(t => t.isCollecting).length,
     totalTrucks: trucks.length,
     pendingRegistrations,
+    missedCollectionReports: reports.filter(r => r.issue.toLowerCase().includes('missed collection')).length,
   };
 }
 

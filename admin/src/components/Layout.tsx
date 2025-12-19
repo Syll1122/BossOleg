@@ -20,6 +20,7 @@ export default function Layout({ admin, onLogout, children }: LayoutProps) {
     { path: '/schedules', label: 'Schedules', icon: '📅', color: 'var(--accent-teal)' },
     { path: '/reports', label: 'Reports', icon: '📝', color: 'var(--accent-orange)' },
     { path: '/trucks', label: 'Trucks', icon: '🚛', color: 'var(--accent-blue)' },
+    { path: '/collection-status', label: 'Collection Status', icon: '📊', color: 'var(--accent-green, #16a34a)' },
   ];
 
   return (

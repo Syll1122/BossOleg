@@ -995,6 +995,84 @@ class SupabaseDatabaseService {
    * Remove a location from a collection schedule by removing the item at the specified index
    * from street_name, barangay_name, latitude, and longitude arrays
    */
+
+  // ========== COLLECTION STATUS METHODS ==========
+
+  /**
+   * Create or update collection status for a street
+   */
+  async updateCollectionStatus(
+    collectorId: string,
+    truckNo: string,
+    street: string,
+    barangay: string,
+    status: 'done' | 'skipped' | 'collected',
+    collectionDate: string
+  ): Promise<void> {
+    const statusId = `${collectorId}-${truckNo}-${street}-${barangay}-${collectionDate}`.replace(/\s+/g, '-');
+    
+    const { error } = await supabase
+      .from('collection_status')
+      .upsert({
+        id: statusId,
+        collectorId: collectorId,
+        truckNo: truckNo,
+        street: street,
+        barangay: barangay,
+        status: status,
+        collectionDate: collectionDate,
+        updatedAt: new Date().toISOString(),
+      }, {
+        onConflict: 'id'
+      });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+  }
+
+  /**
+   * Get collection statuses for a collector on a specific date
+   */
+  async getCollectionStatuses(collectorId: string, collectionDate: string): Promise<any[]> {
+    const { data, error } = await supabase
+      .from('collection_status')
+      .select('*')
+      .eq('collectorId', collectorId)
+      .eq('collectionDate', collectionDate)
+      .order('updatedAt', { ascending: false });
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  }
+
+  /**
+   * Get all collection statuses (for admin)
+   */
+  async getAllCollectionStatuses(dateRange?: { start: string; end: string }): Promise<any[]> {
+    let query = supabase
+      .from('collection_status')
+      .select('*')
+      .order('collectionDate', { ascending: false })
+      .order('updatedAt', { ascending: false });
+
+    if (dateRange) {
+      query = query
+        .gte('collectionDate', dateRange.start)
+        .lte('collectionDate', dateRange.end);
+    }
+
+    const { data, error } = await query;
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    return data || [];
+  }
 }
 
 // Export singleton instance

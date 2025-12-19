@@ -113,6 +113,8 @@ const ReportPage: React.FC = () => {
   const predefinedOptions = [
     'Truck is not going in your street when it supposedly go',
     'It just pass your street',
+    'Missed collection',
+    'Overflowing trashbins',
   ];
 
   const handleSubmit = async (e: React.FormEvent) => {

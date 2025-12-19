@@ -1,8 +1,8 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon, IonSearchbar } from '@ionic/react';
+import { IonPage, IonHeader, IonToolbar, IonContent, IonButton, IonAlert, IonButtons, IonIcon, IonSearchbar, IonModal, IonList, IonItem, IonLabel, IonBadge, IonTitle } from '@ionic/react';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
-import { busOutline, searchOutline } from 'ionicons/icons';
+import { busOutline, searchOutline, checkmarkCircleOutline, closeCircleOutline, timeOutline } from 'ionicons/icons';
 import { databaseService } from '../../services/database';
 import { getCurrentUserId } from '../../utils/auth';
 import { isSecureContext, getGeolocationErrorMessage } from '../../utils/geolocation';
@@ -60,6 +60,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [truckNo, setTruckNo] = useState('');
+  const [showCollectionStatusModal, setShowCollectionStatusModal] = useState(false);
+  const [streets, setStreets] = useState<Array<{street: string; barangay: string; status?: 'done' | 'skipped' | 'collected'}>>([]);
+  const [loadingStreets, setLoadingStreets] = useState(false);
   const otherTrucksRef = useRef<Map<string, L.Marker>>(new Map());
   const watchIdRef = useRef<number | null>(null);
   const isCollectingRef = useRef<boolean>(true); // Track if currently collecting to prevent GPS updates after stopping
@@ -84,6 +87,74 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   useEffect(() => {
     loadTruckNo();
   }, []);
+
+  // Load streets from schedule for today
+  const loadStreetsFromSchedule = async () => {
+    setLoadingStreets(true);
+    try {
+      const userId = getCurrentUserId();
+      if (!userId || !truckNo) return;
+
+      await databaseService.init();
+      
+      // Get today's schedules
+      const schedules = await databaseService.getTodaySchedulesByCollectorId(userId);
+      
+      // Extract all streets from schedules
+      const allStreets: Array<{street: string; barangay: string; status?: 'done' | 'skipped' | 'collected'}> = [];
+      
+      schedules.forEach((schedule: any) => {
+        const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : [schedule.street_name];
+        const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : [schedule.barangay_name];
+        
+        const maxLength = Math.max(streetNames.length, barangayNames.length);
+        for (let i = 0; i < maxLength; i++) {
+          const street = streetNames[i] || 'Unknown Street';
+          const barangay = barangayNames[i] || schedule.barangay || 'Unknown Barangay';
+          allStreets.push({ street, barangay });
+        }
+      });
+
+      // Get existing statuses for today
+      const today = new Date().toISOString().split('T')[0];
+      const existingStatuses = await databaseService.getCollectionStatuses(userId, today);
+      
+      // Merge with existing statuses
+      const streetsWithStatus = allStreets.map(s => {
+        const existing = existingStatuses.find(
+          (es: any) => es.street === s.street && es.barangay === s.barangay
+        );
+        return existing ? { ...s, status: existing.status } : s;
+      });
+
+      setStreets(streetsWithStatus);
+    } catch (error) {
+      console.error('Error loading streets:', error);
+    } finally {
+      setLoadingStreets(false);
+    }
+  };
+
+  // Update street collection status
+  const updateStreetStatus = async (street: string, barangay: string, status: 'done' | 'skipped' | 'collected') => {
+    try {
+      const userId = getCurrentUserId();
+      if (!userId || !truckNo) return;
+
+      const today = new Date().toISOString().split('T')[0];
+      await databaseService.updateCollectionStatus(userId, truckNo, street, barangay, status, today);
+      
+      // Update local state
+      setStreets(prev => prev.map(s => 
+        s.street === street && s.barangay === barangay 
+          ? { ...s, status } 
+          : s
+      ));
+    } catch (error) {
+      console.error('Error updating street status:', error);
+      alert('Failed to update street status');
+    }
+  };
 
   // Refresh function - reloads truck data and updates status
   const handleRefresh = async () => {
@@ -1540,6 +1611,35 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               FULL
             </button>
           </div>
+          
+          <button
+            type="button"
+            onClick={() => {
+              loadStreetsFromSchedule();
+              setShowCollectionStatusModal(true);
+            }}
+            style={{
+              width: '100%',
+              marginTop: '0.75rem',
+              height: 56,
+              borderRadius: 999,
+              border: 'none',
+              backgroundColor: '#16a34a',
+              color: '#ffffff',
+              fontWeight: 700,
+              fontSize: '0.9rem',
+              boxShadow: '0 12px 24px rgba(22, 163, 74, 0.5)',
+              zIndex: 10001,
+              position: 'relative',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '0.5rem',
+            }}
+          >
+            <IonIcon icon={checkmarkCircleOutline} style={{ fontSize: '1.2rem' }} />
+            Track Collection Status
+          </button>
         </div>
       </IonContent>
 
@@ -1553,6 +1653,74 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           { text: 'Yes, Full', handler: onTruckFullConfirm },
         ]}
       />
+
+      <IonModal isOpen={showCollectionStatusModal} onDidDismiss={() => setShowCollectionStatusModal(false)}>
+        <IonHeader>
+          <IonToolbar>
+            <IonButtons slot="start">
+              <IonButton onClick={() => setShowCollectionStatusModal(false)}>Close</IonButton>
+            </IonButtons>
+            <IonTitle>Collection Status</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={loadStreetsFromSchedule}>Refresh</IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent>
+          {loadingStreets ? (
+            <div style={{ padding: '2rem', textAlign: 'center' }}>Loading streets...</div>
+          ) : streets.length === 0 ? (
+            <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
+              <p>No streets found in today's schedule.</p>
+            </div>
+          ) : (
+            <IonList>
+              {streets.map((item, index) => (
+                <IonItem key={`${item.street}-${item.barangay}-${index}`}>
+                  <IonLabel>
+                    <h2>{item.street}</h2>
+                    <p>{item.barangay}</p>
+                  </IonLabel>
+                  <div slot="end" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                    {item.status && (
+                      <IonBadge color={
+                        item.status === 'done' ? 'success' :
+                        item.status === 'collected' ? 'primary' : 'warning'
+                      }>
+                        {item.status}
+                      </IonBadge>
+                    )}
+                    <IonButton
+                      fill="clear"
+                      size="small"
+                      onClick={() => updateStreetStatus(item.street, item.barangay, 'done')}
+                      color={item.status === 'done' ? 'success' : 'medium'}
+                    >
+                      <IonIcon icon={checkmarkCircleOutline} slot="icon-only" />
+                    </IonButton>
+                    <IonButton
+                      fill="clear"
+                      size="small"
+                      onClick={() => updateStreetStatus(item.street, item.barangay, 'skipped')}
+                      color={item.status === 'skipped' ? 'warning' : 'medium'}
+                    >
+                      <IonIcon icon={closeCircleOutline} slot="icon-only" />
+                    </IonButton>
+                    <IonButton
+                      fill="clear"
+                      size="small"
+                      onClick={() => updateStreetStatus(item.street, item.barangay, 'collected')}
+                      color={item.status === 'collected' ? 'primary' : 'medium'}
+                    >
+                      <IonIcon icon={timeOutline} slot="icon-only" />
+                    </IonButton>
+                  </div>
+                </IonItem>
+              ))}
+            </IonList>
+          )}
+        </IonContent>
+      </IonModal>
     </IonPage>
   );
 };

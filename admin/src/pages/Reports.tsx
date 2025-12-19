@@ -1,18 +1,28 @@
 import { useState, useEffect } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Report } from '../types';
 import { getAllReports, updateReportStatus, deleteReport } from '../services/api';
 import './Reports.css';
 
 export default function Reports() {
+  const [searchParams, setSearchParams] = useSearchParams();
   const [reports, setReports] = useState<Report[]>([]);
   const [loading, setLoading] = useState(true);
-  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed' | 'resolved'>('all');
+  const initialFilter = (searchParams.get('filter') as 'all' | 'pending' | 'reviewed' | 'resolved') || 'all';
+  const [filter, setFilter] = useState<'all' | 'pending' | 'reviewed' | 'resolved'>(initialFilter);
 
   useEffect(() => {
     loadReports();
     const interval = setInterval(loadReports, 30000); // Refresh every 30 seconds
     return () => clearInterval(interval);
   }, []);
+
+  useEffect(() => {
+    const urlFilter = searchParams.get('filter') as 'all' | 'pending' | 'reviewed' | 'resolved';
+    if (urlFilter && ['all', 'pending', 'reviewed', 'resolved'].includes(urlFilter)) {
+      setFilter(urlFilter);
+    }
+  }, [searchParams]);
 
   const loadReports = async () => {
     try {
@@ -33,6 +43,17 @@ export default function Reports() {
     } catch (error) {
       console.error('Failed to update report:', error);
       alert('Failed to update report status');
+    }
+  };
+
+  const handleResolve = async (id: string) => {
+    try {
+      await updateReportStatus(id, 'resolved');
+      setReports(reports.map(r => r.id === id ? { ...r, status: 'resolved' } : r));
+      alert('Report resolved successfully!');
+    } catch (error) {
+      console.error('Failed to resolve report:', error);
+      alert('Failed to resolve report');
     }
   };
 
@@ -63,25 +84,37 @@ export default function Reports() {
         <div className="filter-group">
           <button
             className={`filter-btn ${filter === 'all' ? 'active' : ''}`}
-            onClick={() => setFilter('all')}
+            onClick={() => {
+              setFilter('all');
+              setSearchParams({});
+            }}
           >
             All ({reports.length})
           </button>
           <button
             className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
-            onClick={() => setFilter('pending')}
+            onClick={() => {
+              setFilter('pending');
+              setSearchParams({ filter: 'pending' });
+            }}
           >
             Pending ({reports.filter(r => r.status === 'pending').length})
           </button>
           <button
             className={`filter-btn ${filter === 'reviewed' ? 'active' : ''}`}
-            onClick={() => setFilter('reviewed')}
+            onClick={() => {
+              setFilter('reviewed');
+              setSearchParams({ filter: 'reviewed' });
+            }}
           >
             Reviewed ({reports.filter(r => r.status === 'reviewed').length})
           </button>
           <button
             className={`filter-btn ${filter === 'resolved' ? 'active' : ''}`}
-            onClick={() => setFilter('resolved')}
+            onClick={() => {
+              setFilter('resolved');
+              setSearchParams({ filter: 'resolved' });
+            }}
           >
             Resolved ({reports.filter(r => r.status === 'resolved').length})
           </button>
@@ -138,12 +171,23 @@ export default function Reports() {
                   </td>
                   <td>{new Date(report.createdAt).toLocaleString()}</td>
                   <td>
-                    <button
-                      className="btn btn-danger btn-small"
-                      onClick={() => handleDelete(report.id)}
-                    >
-                      Delete
-                    </button>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {report.status === 'pending' && (
+                        <button
+                          className="btn btn-primary btn-small"
+                          onClick={() => handleResolve(report.id)}
+                          style={{ marginRight: '0.5rem' }}
+                        >
+                          Action (Resolve)
+                        </button>
+                      )}
+                      <button
+                        className="btn btn-danger btn-small"
+                        onClick={() => handleDelete(report.id)}
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))

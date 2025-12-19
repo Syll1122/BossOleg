@@ -213,9 +213,40 @@ const LoginPage: React.FC = () => {
             alignItems: 'center',
             justifyContent: 'center',
             padding: '2rem 1.5rem',
-            background: 'var(--app-bg-primary)',
+            background: 'radial-gradient(circle at 20% 20%, rgba(34,197,94,0.15), transparent 35%), radial-gradient(circle at 80% 30%, rgba(59,130,246,0.15), transparent 35%), linear-gradient(135deg, #1a1a1a 0%, #2d2d2d 40%, #252525 100%)',
+            position: 'relative',
           }}
         >
+          {/* Eco Truck Background Element */}
+          <div
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              width: '400px',
+              height: '400px',
+              opacity: 0.08,
+              zIndex: 0,
+              pointerEvents: 'none',
+            }}
+          >
+            <img
+              src="https://images.unsplash.com/photo-1502877828070-33c90eec0b2f?w=600&h=400&fit=crop&q=80&sat=-40&hue=90"
+              alt="Eco Truck Background"
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'contain',
+                filter: 'blur(2px)',
+              }}
+            />
+          </div>
+
+          <div style={{ textAlign: 'center', marginBottom: '1rem', position: 'relative', zIndex: 1 }}>
+            <h1 style={{ margin: 0, fontSize: '1.5rem', letterSpacing: '0.08em', color: '#22c55e' }}>W.A.T.C.H</h1>
+            <div style={{ marginTop: '0.35rem', fontWeight: 600, color: '#e5e5e5' }}>Waste Alert Tracking Collection Hub</div>
+          </div>
           <div
             style={{
               width: '100%',
@@ -225,6 +256,8 @@ const LoginPage: React.FC = () => {
               borderRadius: 28,
               boxShadow: '0 20px 45px rgba(0, 0, 0, 0.6)',
               overflow: 'hidden',
+              position: 'relative',
+              zIndex: 1,
             }}
           >
             <div
@@ -235,10 +268,12 @@ const LoginPage: React.FC = () => {
                 textAlign: 'left',
               }}
             >
-              <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Welcome back</h2>
-              <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.95 }}>
-                Sign in to track garbage trucks and schedules in your barangay.
-              </p>
+              <div>
+                <h2 style={{ margin: 0, fontSize: '1.4rem' }}>Welcome back</h2>
+                <p style={{ marginTop: '0.5rem', fontSize: '0.9rem', opacity: 0.95 }}>
+                  Sign in to track eco-friendly fleets and greener collection routes.
+                </p>
+              </div>
             </div>
 
             <div style={{ padding: '1.5rem 1.5rem 1.25rem' }}>

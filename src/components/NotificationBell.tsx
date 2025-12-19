@@ -36,7 +36,7 @@ const NotificationBell: React.FC = () => {
     // Close popover immediately
     setShowPopover(false);
     
-    // Mark as read
+    // Mark as read if not already read
     if (!notification.read) {
       await markAsRead(notification.id);
     }
@@ -52,6 +52,9 @@ const NotificationBell: React.FC = () => {
         history.push(notification.link);
       }
     }
+
+    // Automatically delete the notification after it's been read
+    await deleteNotification(notification.id);
   };
 
   const formatTime = (dateString: string) => {
@@ -98,7 +101,7 @@ const NotificationBell: React.FC = () => {
           icon={unreadCount > 0 ? notificationsIcon : notificationsOutline}
           style={{ fontSize: '1.75rem' }}
         />
-        {unreadCount > 0 && (
+        {unreadCount > 0 && !showPopover && (
           <IonBadge
             color="danger"
             style={{

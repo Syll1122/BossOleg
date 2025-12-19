@@ -37,6 +37,82 @@ const Home: React.FC = () => {
   const { user } = useCurrentUser();
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [showEcoFriendlyModal, setShowEcoFriendlyModal] = useState(false);
+  const [showSustainableModal, setShowSustainableModal] = useState(false);
+  const [ecoSlideIndex, setEcoSlideIndex] = useState(0);
+  const [sustainableSlideIndex, setSustainableSlideIndex] = useState(0);
+
+  const ecoSlides = [
+    {
+      title: 'Green Fleet in Action',
+      description: 'Low-emission trucks serving downtown routes with optimized stop counts reduce fuel and noise.',
+      image: 'https://images.unsplash.com/photo-1581578731548-c64695cc6952?w=900&h=600&fit=crop&q=80&auto=format',
+      showImage: true,
+    },
+    {
+      title: 'Solar-Powered Recycling',
+      description: 'Community drop-off hubs with solar roofs can run compactors and lighting without additional energy costs.',
+      image: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&q=80&sat=-50',
+    },
+    {
+      title: 'Water-Saving Cleanups',
+      description: 'Wash reusable containers in collected rainwater barrels to conserve tap water for essential needs.',
+      image: 'https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=600&h=400&fit=crop&q=80',
+    },
+  ];
+
+  const sustainableSpotlights = [
+    {
+      title: 'Circular Compost Hub',
+      description: 'Neighborhood composting hubs transform organic waste into soil for urban gardens.',
+      image: 'https://images.unsplash.com/photo-1501004318641-b39e6451bec6?w=600&h=400&fit=crop&q=80',
+    },
+    {
+      title: 'Electric Fleet Pilot',
+      description: 'Pilot programs with electric trucks cut fleet emissions by up to 60% over diesel routes.',
+      image: 'https://images.unsplash.com/photo-1503376780353-7e6692767b70?w=600&h=400&fit=crop&q=80',
+    },
+    {
+      title: 'Rainwater Wash Bays',
+      description: 'Depots that wash collection trucks with captured rainwater save thousands of liters monthly.',
+      image: 'https://images.unsplash.com/photo-1542601906990-b4d3fb778b09?w=900&h=600&fit=crop&q=80&auto=format',
+    },
+    {
+      title: 'Community Reuse Hubs',
+      description: 'Local hubs collect reusables and redistribute them, reducing landfill dependency.',
+      image: 'https://images.unsplash.com/photo-1489515217757-5fd1be406fef?w=600&h=400&fit=crop&q=80&hue=90',
+    },
+  ];
+
+  const cycleSlide = (
+    direction: 'next' | 'prev',
+    itemsLength: number,
+    setter: React.Dispatch<React.SetStateAction<number>>
+  ) => {
+    setter((current) => {
+      const nextIndex =
+        direction === 'next'
+          ? (current + 1) % itemsLength
+          : (current - 1 + itemsLength) % itemsLength;
+      return nextIndex;
+    });
+  };
+
+  // Auto-play sliders with different timings
+  useEffect(() => {
+    const ecoInterval = setInterval(() => {
+      cycleSlide('next', ecoSlides.length, setEcoSlideIndex);
+    }, 5000); // 5 seconds for eco-friendly
+    
+    const sustainableInterval = setInterval(() => {
+      cycleSlide('next', sustainableSpotlights.length, setSustainableSlideIndex);
+    }, 1000); // 1 second for sustainable
+    
+    return () => {
+      clearInterval(ecoInterval);
+      clearInterval(sustainableInterval);
+    };
+  }, [ecoSlides.length, sustainableSpotlights.length]);
 
   // All weekly schedules
   const allSchedules: ScheduleItem[] = [
@@ -407,6 +483,7 @@ const Home: React.FC = () => {
                 }}
               >
                 <div
+                  onClick={() => setShowEcoFriendlyModal(true)}
                   style={{
                     flex: 1,
                     padding: '1rem',
@@ -416,6 +493,7 @@ const Home: React.FC = () => {
                     textAlign: 'center',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(34, 197, 94, 0.05)',
                     transition: 'all 0.3s ease',
+                    cursor: 'pointer',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-4px)';
@@ -433,32 +511,7 @@ const Home: React.FC = () => {
                 </div>
                 
                 <div
-                  style={{
-                    flex: 1,
-                    padding: '1rem',
-                    borderRadius: 16,
-                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(59, 130, 246, 0.05) 100%)',
-                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                    textAlign: 'center',
-                    boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(59, 130, 246, 0.05)',
-                    transition: 'all 0.3s ease',
-                  }}
-                  onMouseEnter={(e) => {
-                    e.currentTarget.style.transform = 'translateY(-4px)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(0, 0, 0, 0.4), 0 0 30px rgba(59, 130, 246, 0.2)';
-                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.4)';
-                  }}
-                  onMouseLeave={(e) => {
-                    e.currentTarget.style.transform = 'translateY(0)';
-                    e.currentTarget.style.boxShadow = '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(59, 130, 246, 0.05)';
-                    e.currentTarget.style.borderColor = 'rgba(59, 130, 246, 0.2)';
-                  }}
-                >
-                  <div style={{ fontSize: '1.5rem', fontWeight: 700, color: '#3b82f6', marginBottom: '0.25rem' }}>📊</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--app-text-secondary)' }}>Track Progress</div>
-                </div>
-                
-                <div
+                  onClick={() => setShowSustainableModal(true)}
                   style={{
                     flex: 1,
                     padding: '1rem',
@@ -468,6 +521,7 @@ const Home: React.FC = () => {
                     textAlign: 'center',
                     boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3), inset 0 0 20px rgba(34, 197, 94, 0.05)',
                     transition: 'all 0.3s ease',
+                    cursor: 'pointer',
                   }}
                   onMouseEnter={(e) => {
                     e.currentTarget.style.transform = 'translateY(-4px)';
@@ -955,6 +1009,306 @@ const Home: React.FC = () => {
                     </div>
                   );
                 })}
+              </div>
+            </div>
+          </div>
+        </IonContent>
+      </IonModal>
+
+      {/* Eco-Friendly Modal */}
+      <IonModal isOpen={showEcoFriendlyModal} onDidDismiss={() => setShowEcoFriendlyModal(false)}>
+        <IonHeader>
+          <IonToolbar>
+            <IonTitle>♻️ Eco-Friendly</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={() => setShowEcoFriendlyModal(false)}>
+                <IonIcon icon={closeOutline} />
+              </IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent>
+          <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
+            <div style={{ maxWidth: 480, margin: '0 auto' }}>
+              <div className="watch-card" style={{ padding: '1.5rem 1.4rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>♻️</div>
+                  <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#22c55e', fontWeight: 700 }}>Eco-Friendly Practices</h2>
+                </div>
+
+                {ecoSlides.length > 0 && (
+                  <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                    <img
+                      src={`${ecoSlides[ecoSlideIndex].image}&sig=eco-${ecoSlideIndex}`}
+                      alt={ecoSlides[ecoSlideIndex].title}
+                      style={{
+                        width: '100%',
+                        borderRadius: 16,
+                        marginBottom: '0.75rem',
+                        boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+                        objectFit: 'cover',
+                        maxHeight: 220,
+                        transition: 'opacity 0.6s ease',
+                        opacity: 1,
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => cycleSlide('prev', ecoSlides.length, setEcoSlideIndex)}
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        left: 12,
+                        transform: 'translateY(-50%)',
+                        background: 'rgba(15, 23, 42, 0.7)',
+                        border: 'none',
+                        color: 'white',
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ‹
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => cycleSlide('next', ecoSlides.length, setEcoSlideIndex)}
+                      style={{
+                        position: 'absolute',
+                        top: '50%',
+                        right: 12,
+                        transform: 'translateY(-50%)',
+                        background: 'rgba(15, 23, 42, 0.7)',
+                        border: 'none',
+                        color: 'white',
+                        width: 36,
+                        height: 36,
+                        borderRadius: '50%',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      ›
+                    </button>
+                    <div style={{ textAlign: 'center' }}>
+                      <h3 style={{ fontSize: '1.1rem', color: '#22c55e', marginBottom: '0.35rem' }}>{ecoSlides[ecoSlideIndex].title}</h3>
+                      <p style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: 1.5 }}>
+                        {ecoSlides[ecoSlideIndex].description}
+                      </p>
+                    </div>
+                  </div>
+                )}
+                
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    What is Eco-Friendly Waste Collection?
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.6', margin: 0 }}>
+                    Eco-friendly waste collection refers to waste management practices that minimize environmental impact and promote sustainability. This includes proper sorting, recycling, and disposal methods that reduce pollution and conserve natural resources.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    Key Benefits
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Reduces landfill waste and greenhouse gas emissions</li>
+                    <li>Conserves natural resources through recycling</li>
+                    <li>Protects wildlife and ecosystems from pollution</li>
+                    <li>Promotes a cleaner, healthier environment for communities</li>
+                    <li>Supports circular economy principles</li>
+                  </ul>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    Eco-Friendly Actions You Can Take Today
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Organize a neighborhood “reverse booth” that collects plastics for upcycling.</li>
+                    <li>Switch to biodegradable liners made from cassava or cornstarch for organic bins.</li>
+                    <li>Host community repair cafes to keep electronics and bikes out of landfills.</li>
+                    <li>Designate a “reusable day” each week where the household avoids disposables entirely.</li>
+                  </ul>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    How You Can Help
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Sort your waste properly (recyclables, organic, general)</li>
+                    <li>Reduce waste by choosing reusable products</li>
+                    <li>Follow collection schedules to ensure proper disposal</li>
+                    <li>Report improper waste disposal when you see it</li>
+                    <li>Educate others about eco-friendly practices</li>
+                  </ul>
+                </div>
+
+                <div style={{
+                  padding: '1rem',
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)',
+                  border: '1px solid rgba(34, 197, 94, 0.2)',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)', margin: 0, fontStyle: 'italic' }}>
+                    "Every small action counts. Together, we can create a more sustainable future for our planet."
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </IonContent>
+      </IonModal>
+
+      {/* Sustainable Modal */}
+      <IonModal isOpen={showSustainableModal} onDidDismiss={() => setShowSustainableModal(false)}>
+        <IonHeader>
+          <IonToolbar>
+            <IonTitle>🌱 Sustainable</IonTitle>
+            <IonButtons slot="end">
+              <IonButton onClick={() => setShowSustainableModal(false)}>
+                <IonIcon icon={closeOutline} />
+              </IonButton>
+            </IonButtons>
+          </IonToolbar>
+        </IonHeader>
+        <IonContent>
+          <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
+            <div style={{ maxWidth: 480, margin: '0 auto' }}>
+              <div className="watch-card" style={{ padding: '1.5rem 1.4rem' }}>
+                <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+                  <div style={{ fontSize: '3rem', marginBottom: '0.5rem' }}>🌱</div>
+                  <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#22c55e', fontWeight: 700 }}>Sustainable Waste Management</h2>
+                </div>
+
+              {sustainableSpotlights.length > 0 && (
+                <div style={{ position: 'relative', marginBottom: '1rem' }}>
+                  <img
+                    src={`${sustainableSpotlights[sustainableSlideIndex].image}&sig=sus-${sustainableSlideIndex}`}
+                    alt={sustainableSpotlights[sustainableSlideIndex].title}
+                    style={{
+                      width: '100%',
+                      borderRadius: 16,
+                      marginBottom: '0.75rem',
+                      boxShadow: '0 6px 24px rgba(0,0,0,0.25)',
+                      objectFit: 'cover',
+                      maxHeight: 220,
+                      transition: 'opacity 0.6s ease',
+                      opacity: 1,
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => cycleSlide('prev', sustainableSpotlights.length, setSustainableSlideIndex)}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      left: 12,
+                      transform: 'translateY(-50%)',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: 'none',
+                      color: 'white',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ‹
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => cycleSlide('next', sustainableSpotlights.length, setSustainableSlideIndex)}
+                    style={{
+                      position: 'absolute',
+                      top: '50%',
+                      right: 12,
+                      transform: 'translateY(-50%)',
+                      background: 'rgba(15, 23, 42, 0.7)',
+                      border: 'none',
+                      color: 'white',
+                      width: 36,
+                      height: 36,
+                      borderRadius: '50%',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    ›
+                  </button>
+                  <div style={{ textAlign: 'center' }}>
+                    <h3 style={{ fontSize: '1.1rem', color: '#22c55e', marginBottom: '0.35rem' }}>
+                      {sustainableSpotlights[sustainableSlideIndex].title}
+                    </h3>
+                    <p style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: 1.5 }}>
+                      {sustainableSpotlights[sustainableSlideIndex].description}
+                    </p>
+                  </div>
+                </div>
+              )}
+                
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    What is Sustainability?
+                  </h3>
+                  <p style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.6', margin: 0 }}>
+                    Sustainability means meeting our current needs without compromising the ability of future generations to meet their own needs. In waste management, this involves creating systems that can operate long-term without depleting resources or harming the environment.
+                  </p>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    Sustainable Practices
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Efficient collection routes that minimize fuel consumption</li>
+                    <li>Waste-to-energy programs that generate renewable power</li>
+                    <li>Composting organic waste to create nutrient-rich soil</li>
+                    <li>Material recovery facilities that maximize recycling</li>
+                    <li>Community education programs on waste reduction</li>
+                    <li>Depot solar roofs that power compactors and overnight charging bays</li>
+                    <li>Reclaimed water systems for washing bins and fleet vehicles</li>
+                  </ul>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    Innovation Highlights
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Deploy AI route-planning to reduce idle time and fuel burn on collection days.</li>
+                    <li>Adopt smart bins that alert crews when full to prevent overflow and missed pickups.</li>
+                    <li>Partner with local artisans who transform recyclables into market-ready products.</li>
+                    <li>Use digital QR tags on bins so residents can view collection history and tips.</li>
+                  </ul>
+                </div>
+
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <h3 style={{ fontSize: '1.1rem', color: 'var(--app-text-primary)', marginBottom: '0.75rem', fontWeight: 600 }}>
+                    Long-Term Impact
+                  </h3>
+                  <ul style={{ fontSize: '0.9rem', color: 'var(--app-text-secondary)', lineHeight: '1.8', paddingLeft: '1.25rem', margin: 0 }}>
+                    <li>Preserves natural resources for future generations</li>
+                    <li>Reduces dependency on landfills</li>
+                    <li>Creates green jobs and economic opportunities</li>
+                    <li>Improves air and water quality in communities</li>
+                    <li>Builds resilience against environmental challenges</li>
+                  </ul>
+                </div>
+
+                <div style={{
+                  padding: '1rem',
+                  borderRadius: 12,
+                  background: 'linear-gradient(135deg, rgba(34, 197, 94, 0.1) 0%, rgba(34, 197, 94, 0.05) 100%)',
+                  border: '1px solid rgba(34, 197, 94, 0.2)',
+                  textAlign: 'center',
+                }}>
+                  <p style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)', margin: 0, fontStyle: 'italic' }}>
+                    "Sustainability is not about perfection, it's about progress. Every step towards a greener future matters."
+                  </p>
+                </div>
               </div>
             </div>
           </div>
