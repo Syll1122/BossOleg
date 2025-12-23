@@ -13,14 +13,14 @@ export default function Layout({ admin, onLogout, children }: LayoutProps) {
   const location = useLocation();
 
   const navItems = [
-    { path: '/', label: 'Dashboard', icon: '📊', color: 'var(--accent-blue)' },
-    { path: '/registrations', label: 'Registrations', icon: '✅', color: 'var(--accent-yellow)' },
-    { path: '/users', label: 'Users', icon: '👥', color: 'var(--accent-purple)' },
-    { path: '/create-user', label: 'Create User', icon: '➕', color: 'var(--primary)' },
-    { path: '/schedules', label: 'Schedules', icon: '📅', color: 'var(--accent-teal)' },
-    { path: '/reports', label: 'Reports', icon: '📝', color: 'var(--accent-orange)' },
-    { path: '/trucks', label: 'Trucks', icon: '🚛', color: 'var(--accent-blue)' },
-    { path: '/collection-status', label: 'Collection Status', icon: '📊', color: 'var(--accent-green, #16a34a)' },
+    { path: '/', label: 'Dashboard', icon: 'grid', color: 'var(--accent-blue)' },
+    { path: '/registrations', label: 'Registrations', icon: 'document', color: 'var(--accent-yellow)' },
+    { path: '/users', label: 'Users', icon: 'group', color: 'var(--accent-purple)' },
+    { path: '/create-user', label: 'Create User', icon: 'person-plus', color: 'var(--primary)' },
+    { path: '/schedules', label: 'Schedules', icon: 'calendar', color: 'var(--accent-teal)' },
+    { path: '/reports', label: 'Reports', icon: 'document', color: 'var(--accent-orange)' },
+    { path: '/trucks', label: 'Trucks', icon: 'truck', color: 'var(--accent-blue)' },
+    { path: '/collection-status', label: 'Collection Status', icon: 'bar-chart', color: 'var(--accent-green, #16a34a)' },
   ];
 
   return (
@@ -43,7 +43,15 @@ export default function Layout({ admin, onLogout, children }: LayoutProps) {
               className={`nav-item ${location.pathname === item.path ? 'active' : ''}`}
               style={location.pathname === item.path ? { '--accent-color': item.color } as React.CSSProperties : {}}
             >
-              <span className="nav-icon" style={{ color: item.color }}>{item.icon}</span>
+              <span className={`nav-icon nav-icon-${item.icon}`}>
+                {item.icon === 'grid' && '⊞'}
+                {item.icon === 'document' && '📄'}
+                {item.icon === 'group' && '👥'}
+                {item.icon === 'person-plus' && <span style={{ fontSize: '0.9rem' }}>👤+</span>}
+                {item.icon === 'calendar' && '📅'}
+                {item.icon === 'truck' && '🚛'}
+                {item.icon === 'bar-chart' && '📊'}
+              </span>
               <span>{item.label}</span>
             </Link>
           ))}

@@ -8,6 +8,7 @@ import { getCurrentUserId } from '../../utils/auth';
 import { requestGeolocation, getGeolocationErrorMessage, isSecureContext } from '../../utils/geolocation';
 import { isValidCoordinate } from '../../utils/coordinates';
 import RefreshButton from '../../components/RefreshButton';
+import { supabase } from '../../services/supabase';
 
 interface ScheduleLocation {
   name: string;
@@ -50,6 +51,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
   const [showSearch, setShowSearch] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [truckFullAlert, setTruckFullAlert] = useState(false);
+  const [selectedRouteForAction, setSelectedRouteForAction] = useState<DayLocation | null>(null);
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [collectionStatuses, setCollectionStatuses] = useState<any[]>([]);
 
   useEffect(() => {
     const loadTruckNo = async () => {
@@ -66,74 +70,6 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     };
     loadTruckNo();
   }, []);
-
-  // Load streets from schedule for today
-  const loadStreetsFromSchedule = async () => {
-    setLoadingStreets(true);
-    try {
-      const userId = getCurrentUserId();
-      if (!userId || !truckNo) return;
-
-      await databaseService.init();
-      
-      // Get today's schedules
-      const schedules = await databaseService.getTodaySchedulesByCollectorId(userId);
-      
-      // Extract all streets from schedules
-      const allStreets: Array<{street: string; barangay: string; status?: 'done' | 'skipped' | 'collected'}> = [];
-      
-      schedules.forEach((schedule: any) => {
-        const streetNames = Array.isArray(schedule.street_name) ? schedule.street_name : [schedule.street_name];
-        const barangayNames = Array.isArray(schedule.barangay_name) ? schedule.barangay_name : [schedule.barangay_name];
-        
-        const maxLength = Math.max(streetNames.length, barangayNames.length);
-        for (let i = 0; i < maxLength; i++) {
-          const street = streetNames[i] || 'Unknown Street';
-          const barangay = barangayNames[i] || schedule.barangay || 'Unknown Barangay';
-          allStreets.push({ street, barangay });
-        }
-      });
-
-      // Get existing statuses for today
-      const today = new Date().toISOString().split('T')[0];
-      const existingStatuses = await databaseService.getCollectionStatuses(userId, today);
-      
-      // Merge with existing statuses
-      const streetsWithStatus = allStreets.map(s => {
-        const existing = existingStatuses.find(
-          (es: any) => es.street === s.street && es.barangay === s.barangay
-        );
-        return existing ? { ...s, status: existing.status } : s;
-      });
-
-      setStreets(streetsWithStatus);
-    } catch (error) {
-      console.error('Error loading streets:', error);
-    } finally {
-      setLoadingStreets(false);
-    }
-  };
-
-  // Update street collection status
-  const updateStreetStatus = async (street: string, barangay: string, status: 'done' | 'skipped' | 'collected') => {
-    try {
-      const userId = getCurrentUserId();
-      if (!userId || !truckNo) return;
-
-      const today = new Date().toISOString().split('T')[0];
-      await databaseService.updateCollectionStatus(userId, truckNo, street, barangay, status, today);
-      
-      // Update local state
-      setStreets(prev => prev.map(s => 
-        s.street === street && s.barangay === barangay 
-          ? { ...s, status } 
-          : s
-      ));
-    } catch (error) {
-      console.error('Error updating street status:', error);
-      alert('Failed to update street status');
-    }
-  };
 
   // Refresh function - reloads truck data and updates status
   const handleRefresh = async () => {
@@ -240,12 +176,20 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
         if (!userId || dayLocations.length === 0) return;
 
         const needsRouteCoordinates = dayLocations.some(loc => !loc.routeCoordinates);
+        
+        // Always load schedules to have them available for Complete/Skipped buttons
+        const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+        setSchedules(collectorSchedules);
+
+        // Load collection statuses for today
+        await loadCollectionStatuses();
+
         if (!needsRouteCoordinates) {
           setEnhancedLocations(dayLocations);
           return;
         }
 
-        const schedules = await databaseService.getSchedulesByCollectorId(userId);
+        const schedules = collectorSchedules;
         const updated = dayLocations.map(location => {
           if (location.routeCoordinates) return location;
           
@@ -275,6 +219,105 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     };
     if (dayLocations.length > 0) loadSchedules();
   }, [dayLocations]);
+
+  // Load collection statuses from database
+  const loadCollectionStatuses = async () => {
+    try {
+      const userId = getCurrentUserId();
+      if (!userId) return;
+      
+      const today = new Date().toISOString().split('T')[0];
+      const { data, error } = await supabase
+        .from('collection_status')
+        .select('*')
+        .eq('collectionDate', today)
+        .eq('collectorId', userId);
+      
+      if (error) {
+        console.error('Error loading collection statuses:', error);
+        return;
+      }
+      
+      setCollectionStatuses(data || []);
+      console.log('Collection statuses loaded:', data?.length || 0);
+    } catch (error) {
+      console.error('Error loading collection statuses:', error);
+    }
+  };
+
+  // Get collection status for a specific route
+  const getRouteStatus = (location: DayLocation): 'collected' | 'skipped' | 'missed' | null => {
+    if (collectionStatuses.length === 0) return null;
+    
+    const schedule = schedules.find(s => s.id === location.scheduleId);
+    if (!schedule) return null;
+    
+    const streetName = Array.isArray(schedule.street_name) 
+      ? schedule.street_name[0] 
+      : schedule.street_name || '';
+    const today = new Date().toISOString().split('T')[0];
+    
+    // Match by scheduleId and streetName (schema uses scheduleId + streetName + collectionDate as unique key)
+    const status = collectionStatuses.find(s => 
+      s.scheduleId === location.scheduleId && 
+      s.streetName === streetName && 
+      s.collectionDate === today
+    );
+    
+    if (!status) return null;
+    
+    if (status.status === 'collected') return 'collected';
+    if (status.status === 'skipped') return 'skipped';
+    if (status.status === 'missed') return 'missed';
+    return null;
+  };
+
+  // Load collection statuses when truckNo is available
+  useEffect(() => {
+    if (truckNo) {
+      loadCollectionStatuses();
+    }
+  }, [truckNo]);
+
+  // Check for end of day and mark remaining routes as missed
+  useEffect(() => {
+    const checkEndOfDay = () => {
+      const now = new Date();
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+      
+      // Calculate milliseconds until end of day
+      const msUntilEndOfDay = endOfDay.getTime() - now.getTime();
+      
+      if (msUntilEndOfDay > 0) {
+        // Set timeout to run at end of day
+        const timeoutId = setTimeout(() => {
+          markRemainingRoutesAsMissed();
+        }, msUntilEndOfDay);
+        
+        return () => clearTimeout(timeoutId);
+      } else {
+        // Already past end of day, run immediately
+        markRemainingRoutesAsMissed();
+      }
+    };
+
+    // Check immediately and set up end of day check
+    const cleanup = checkEndOfDay();
+    
+    // Also check every hour to catch any missed end-of-day
+    const intervalId = setInterval(() => {
+      const now = new Date();
+      if (now.getHours() === 23 && now.getMinutes() >= 59) {
+        markRemainingRoutesAsMissed();
+      }
+    }, 60 * 60 * 1000); // Check every hour
+
+    return () => {
+      if (cleanup) cleanup();
+      clearInterval(intervalId);
+    };
+  }, []);
 
   // Create truck icons with dynamic truck number
   const createTruckIcon = (isRed: boolean, truckNumber: string) => {
@@ -446,6 +489,608 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
     }
 
     setSelectedStreetId(location.scheduleId);
+    // Set selected route to show Complete/Skipped buttons
+    setSelectedRouteForAction(location);
+  };
+
+  // Handle route completion
+  const handleRouteComplete = async (location: DayLocation) => {
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      if (!userId || !truckNo) {
+        console.error('Missing userId or truckNo');
+        return;
+      }
+
+      // Find schedule - try by scheduleId first, then by matching street/barangay
+      let schedule = schedules.find(s => s.id === location.scheduleId);
+      
+      // If schedule not found by ID, try to find by street and barangay match
+      if (!schedule) {
+        schedule = schedules.find(s => {
+          const sStreet = Array.isArray(s.street_name) ? s.street_name[0] : s.street_name || '';
+          const sBarangay = Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name || '';
+          return (sStreet === location.street || sStreet === location.streetId) && 
+                 sBarangay === location.barangay;
+        });
+      }
+      
+      if (!schedule) {
+        console.error('Schedule not found for location:', location);
+        console.error('Available schedules:', schedules.map(s => ({ id: s.id, street: Array.isArray(s.street_name) ? s.street_name[0] : s.street_name, barangay: Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name })));
+        alert('Schedule not found. Please try again.');
+        return;
+      }
+
+      const streetName = Array.isArray(schedule.street_name) 
+        ? schedule.street_name[0] 
+        : schedule.street_name || '';
+      const barangayName = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name[0] 
+        : schedule.barangay_name || '';
+      const todayDate = new Date().toISOString().split('T')[0];
+
+      // Check if status already exists (use maybeSingle to avoid error if not found)
+      // Schema uses scheduleId + streetName + collectionDate as unique key
+      console.log('🔍 Checking for existing status:', { scheduleId: location.scheduleId, streetName, collectionDate: todayDate });
+      const { data: existingStatus, error: queryError } = await supabase
+        .from('collection_status')
+        .select('*')
+        .eq('scheduleId', location.scheduleId)
+        .eq('streetName', streetName)
+        .eq('collectionDate', todayDate)
+        .maybeSingle();
+
+      if (queryError && queryError.code !== 'PGRST116') { // PGRST116 is "not found" which is OK
+        console.error('❌ Error querying collection status:', queryError);
+        return;
+      }
+
+      console.log('📊 Existing status found:', existingStatus);
+
+      const streetId = location.streetId || null;
+      const markedAt = new Date().toISOString();
+      const markedBy = userId;
+
+      // Use upsert to handle both insert and update in one operation
+      // This ensures we don't have race conditions or duplicate key issues
+      const recordId = existingStatus?.id || `${userId}-${location.scheduleId}-${streetName}-${todayDate}-${Date.now()}`;
+      
+      const statusData = {
+        id: recordId,
+        scheduleId: location.scheduleId,
+        collectorId: userId,
+        streetName: streetName,
+        streetId: streetId,
+        barangayName: barangayName,
+        collectionDate: todayDate,
+        status: 'collected' as const,  // IMPORTANT: This is 'collected', NOT 'skipped'
+        markedAt: markedAt,
+        markedBy: markedBy,
+        updatedAt: new Date().toISOString()
+      };
+
+      console.log('💾 Upserting collection status as "collected"', { 
+        recordId, 
+        scheduleId: location.scheduleId, 
+        streetName, 
+        collectionDate: todayDate,
+        status: statusData.status  // Verify status is 'collected'
+      });
+
+      // Try upsert first, but if it fails due to unique constraint, fall back to update
+      let result;
+      let error;
+      
+      if (existingStatus) {
+        // Update existing record
+        const updateResult = await supabase
+          .from('collection_status')
+          .update({ 
+            status: 'collected',
+            markedAt: markedAt,
+            markedBy: markedBy,
+            updatedAt: new Date().toISOString()
+          })
+          .eq('id', existingStatus.id)
+          .select();
+        
+        result = updateResult.data;
+        error = updateResult.error;
+      } else {
+        // Insert new record
+        const insertResult = await supabase
+          .from('collection_status')
+          .insert(statusData)
+          .select();
+        
+        result = insertResult.data;
+        error = insertResult.error;
+      }
+
+      if (error) {
+        console.error('❌ Error saving collection status:', error);
+        console.error('Error details:', JSON.stringify(error, null, 2));
+        console.error('Attempted to save:', statusData);
+        alert(`Failed to save collection status: ${error.message || 'Unknown error'}`);
+        return;
+      }
+
+      console.log('✅ Collection status saved as collected:', result);
+      if (result && result.length > 0) {
+        console.log('✅ Verified saved status:', result[0].status);
+      }
+
+      // Show success message
+      if (result && result.length > 0) {
+        console.log('✅ Route marked as complete and saved to database');
+      }
+
+      // Remove from enhanced locations (same logic as handleLocationDone)
+      // For routes, match by scheduleId, street, and barangay (not exact coordinates since routes have multiple points)
+      const updatedLocations = enhancedLocations.filter(loc => {
+        // Match by scheduleId first (most reliable)
+        if (loc.scheduleId !== location.scheduleId) return true;
+        
+        // If scheduleId matches, also check street and barangay
+        const streetMatch = loc.street === location.street || 
+                           (loc.streetId && location.streetId && loc.streetId === location.streetId) ||
+                           (!loc.street && !location.street); // Both empty
+        const barangayMatch = loc.barangay === location.barangay;
+        
+        // If all match, remove this location
+        if (streetMatch && barangayMatch) {
+          console.log('Removing location:', { scheduleId: loc.scheduleId, street: loc.street, barangay: loc.barangay });
+          return false; // Remove this location
+        }
+        
+        return true; // Keep this location
+      });
+      
+      console.log(`Removed location from list. Remaining: ${updatedLocations.length}`);
+      setEnhancedLocations(updatedLocations);
+
+      // Remove polyline from map
+      const polyline = routePolylinesRef.current.get(location.scheduleId);
+      if (polyline && mapRef.current) {
+        mapRef.current.removeLayer(polyline);
+        routePolylinesRef.current.delete(location.scheduleId);
+      }
+
+      // Remove navigation polyline if it exists for this route
+      if (navigationPolylineRef.current && mapRef.current && mapRef.current.hasLayer(navigationPolylineRef.current)) {
+        // Check if this navigation polyline is for the current location
+        const navBounds = navigationPolylineRef.current.getBounds();
+        const locationPoint = L.latLng(location.lat, location.lng);
+        if (navBounds.contains(locationPoint)) {
+          mapRef.current.removeLayer(navigationPolylineRef.current);
+          navigationPolylineRef.current = null;
+        }
+      }
+
+      // Remove search marker if it exists for this location
+      if (searchMarkerRef.current && mapRef.current) {
+        const markerLatLng = searchMarkerRef.current.getLatLng();
+        if (Math.abs(markerLatLng.lat - location.lat) < 0.0001 && 
+            Math.abs(markerLatLng.lng - location.lng) < 0.0001) {
+          mapRef.current.removeLayer(searchMarkerRef.current);
+          searchMarkerRef.current = null;
+        }
+      }
+
+      // Clear selection
+      setSelectedRouteForAction(null);
+      setSelectedStreetId(null);
+      
+      // Reload collection statuses to update UI
+      await loadCollectionStatuses();
+      
+      // If all routes are done, show a message
+      if (updatedLocations.length === 0) {
+        console.log('✅ All routes completed for today!');
+      }
+    } catch (error) {
+      console.error('Error completing route:', error);
+      alert('An error occurred while completing the route. Please try again.');
+    }
+  };
+
+  // Handle route skipped
+  const handleRouteSkipped = async (location: DayLocation) => {
+    try {
+      await databaseService.init();
+      const userId = getCurrentUserId();
+      if (!userId || !truckNo) {
+        console.error('Missing userId or truckNo');
+        return;
+      }
+
+      // Find schedule - try by scheduleId first, then by matching street/barangay
+      let schedule = schedules.find(s => s.id === location.scheduleId);
+      
+      // If schedule not found by ID, try to find by street and barangay match
+      if (!schedule) {
+        schedule = schedules.find(s => {
+          const sStreet = Array.isArray(s.street_name) ? s.street_name[0] : s.street_name || '';
+          const sBarangay = Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name || '';
+          return (sStreet === location.street || sStreet === location.streetId) && 
+                 sBarangay === location.barangay;
+        });
+      }
+      
+      if (!schedule) {
+        console.error('Schedule not found for location:', location);
+        console.error('Available schedules:', schedules.map(s => ({ id: s.id, street: Array.isArray(s.street_name) ? s.street_name[0] : s.street_name, barangay: Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name })));
+        alert('Schedule not found. Please try again.');
+        return;
+      }
+
+      const streetName = Array.isArray(schedule.street_name) 
+        ? schedule.street_name[0] 
+        : schedule.street_name || '';
+      const barangayName = Array.isArray(schedule.barangay_name) 
+        ? schedule.barangay_name[0] 
+        : schedule.barangay_name || '';
+      const todayDate = new Date().toISOString().split('T')[0];
+
+      // Check if status already exists (use maybeSingle to avoid error if not found)
+      // Schema uses scheduleId + streetName + collectionDate as unique key
+      const { data: existingStatus, error: queryError } = await supabase
+        .from('collection_status')
+        .select('*')
+        .eq('scheduleId', location.scheduleId)
+        .eq('streetName', streetName)
+        .eq('collectionDate', todayDate)
+        .maybeSingle();
+
+      if (queryError && queryError.code !== 'PGRST116') { // PGRST116 is "not found" which is OK
+        console.error('Error querying collection status:', queryError);
+        return;
+      }
+
+      const streetId = location.streetId || null;
+      const markedAt = new Date().toISOString();
+      const markedBy = userId;
+
+      let result;
+      if (existingStatus) {
+        // Update existing status
+        const { data, error } = await supabase
+          .from('collection_status')
+          .update({ 
+            status: 'skipped', 
+            markedAt: markedAt,
+            markedBy: markedBy,
+            updatedAt: new Date().toISOString() 
+          })
+          .eq('id', existingStatus.id)
+          .select();
+
+        if (error) {
+          console.error('Error updating collection status:', error);
+          alert('Failed to update collection status. Please try again.');
+          return;
+        }
+        result = data;
+        console.log('Collection status updated to skipped:', result);
+      } else {
+        // Insert new status
+        const { data, error } = await supabase
+          .from('collection_status')
+          .insert({
+            id: `${userId}-${location.scheduleId}-${streetName}-${todayDate}-${Date.now()}`,
+            scheduleId: location.scheduleId,
+            collectorId: userId,
+            streetName: streetName,
+            streetId: streetId,
+            barangayName: barangayName,
+            collectionDate: todayDate,
+            status: 'skipped',
+            markedAt: markedAt,
+            markedBy: markedBy,
+            updatedAt: new Date().toISOString()
+          })
+          .select();
+
+        if (error) {
+          console.error('Error inserting collection status:', error);
+          alert('Failed to save collection status. Please try again.');
+          return;
+        }
+        result = data;
+        console.log('Collection status created as skipped:', result);
+      }
+
+      // Show success message
+      if (result && result.length > 0) {
+        console.log('✅ Route marked as skipped and saved to database');
+      }
+
+      // Remove from enhanced locations (same logic as handleLocationDone)
+      // For routes, match by scheduleId, street, and barangay (not exact coordinates since routes have multiple points)
+      const updatedLocations = enhancedLocations.filter(loc => {
+        // Match by scheduleId first (most reliable)
+        if (loc.scheduleId !== location.scheduleId) return true;
+        
+        // If scheduleId matches, also check street and barangay
+        const streetMatch = loc.street === location.street || 
+                           (loc.streetId && location.streetId && loc.streetId === location.streetId) ||
+                           (!loc.street && !location.street); // Both empty
+        const barangayMatch = loc.barangay === location.barangay;
+        
+        // If all match, remove this location
+        if (streetMatch && barangayMatch) {
+          console.log('Removing location:', { scheduleId: loc.scheduleId, street: loc.street, barangay: loc.barangay });
+          return false; // Remove this location
+        }
+        
+        return true; // Keep this location
+      });
+      
+      console.log(`Removed location from list. Remaining: ${updatedLocations.length}`);
+      setEnhancedLocations(updatedLocations);
+
+      // Remove polyline from map
+      const polyline = routePolylinesRef.current.get(location.scheduleId);
+      if (polyline && mapRef.current) {
+        mapRef.current.removeLayer(polyline);
+        routePolylinesRef.current.delete(location.scheduleId);
+      }
+
+      // Remove navigation polyline if it exists for this route
+      if (navigationPolylineRef.current && mapRef.current && mapRef.current.hasLayer(navigationPolylineRef.current)) {
+        // Check if this navigation polyline is for the current location
+        const navBounds = navigationPolylineRef.current.getBounds();
+        const locationPoint = L.latLng(location.lat, location.lng);
+        if (navBounds.contains(locationPoint)) {
+          mapRef.current.removeLayer(navigationPolylineRef.current);
+          navigationPolylineRef.current = null;
+        }
+      }
+
+      // Remove search marker if it exists for this location
+      if (searchMarkerRef.current && mapRef.current) {
+        const markerLatLng = searchMarkerRef.current.getLatLng();
+        if (Math.abs(markerLatLng.lat - location.lat) < 0.0001 && 
+            Math.abs(markerLatLng.lng - location.lng) < 0.0001) {
+          mapRef.current.removeLayer(searchMarkerRef.current);
+          searchMarkerRef.current = null;
+        }
+      }
+
+      // Clear selection
+      setSelectedRouteForAction(null);
+      setSelectedStreetId(null);
+      
+      // Reload collection statuses to update UI
+      await loadCollectionStatuses();
+      
+      // If all routes are done, show a message
+      if (updatedLocations.length === 0) {
+        console.log('✅ All routes processed for today!');
+      }
+    } catch (error) {
+      console.error('Error skipping route:', error);
+      alert('An error occurred while skipping the route. Please try again.');
+    }
+  };
+
+  // Mark remaining routes as missed at end of day (runs automatically)
+  const markRemainingRoutesAsMissed = async () => {
+    try {
+      const userId = getCurrentUserId();
+      if (!userId) return;
+
+      const now = new Date();
+      const todayDate = now.toISOString().split('T')[0];
+      const endOfDay = new Date(now);
+      endOfDay.setHours(23, 59, 59, 999);
+
+      // Only run if it's at or past end of day (11:59 PM or later)
+      // When called from timeout, it will be at end of day, so this check ensures we only process once per day
+      if (now.getTime() < endOfDay.getTime() - 60000) { // Allow 1 minute buffer
+        console.log('⏰ Not end of day yet, skipping missed route marking');
+        return; // Not end of day yet
+      }
+
+      console.log('🕐 End of day reached - marking remaining routes as missed for', todayDate);
+
+      // Get all schedules for this collector
+      const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+      
+      // Get today's day abbreviation
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayDay = days[now.getDay()];
+      const dayAbbreviations: Record<string, string> = {
+        'Monday': 'Mon',
+        'Tuesday': 'Tue',
+        'Wednesday': 'Wed',
+        'Thursday': 'Thu',
+        'Friday': 'Fri',
+        'Saturday': 'Sat'
+      };
+      const todayDayAbbr = dayAbbreviations[todayDay];
+
+      // Get all schedules for today
+      const todaySchedules = collectorSchedules.filter(schedule => 
+        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(todayDayAbbr)
+      );
+
+      // For each route scheduled for today, check if it has a status
+      // If not collected or skipped, mark as missed
+      for (const schedule of todaySchedules) {
+        const streetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name[0] 
+          : schedule.street_name || '';
+        const barangayName = Array.isArray(schedule.barangay_name) 
+          ? schedule.barangay_name[0] 
+          : schedule.barangay_name || '';
+
+        if (!streetName && !barangayName) continue;
+
+        // Check if status already exists
+        const { data: existingStatus } = await supabase
+          .from('collection_status')
+          .select('*')
+          .eq('scheduleId', schedule.id)
+          .eq('streetName', streetName)
+          .eq('collectionDate', todayDate)
+          .maybeSingle();
+
+        // Only mark as missed if no status exists, or status is 'pending'
+        // Don't overwrite 'collected' or 'skipped' statuses
+        if (!existingStatus || existingStatus.status === 'pending') {
+          const streetId = Array.isArray(schedule.street_id) ? schedule.street_id[0] : schedule.street_id || null;
+          const markedAt = new Date().toISOString();
+          const markedBy = userId;
+
+          if (existingStatus && existingStatus.status === 'pending') {
+            // Update pending status to missed
+            const { error } = await supabase
+              .from('collection_status')
+              .update({ 
+                status: 'missed',
+                markedAt: markedAt,
+                markedBy: markedBy,
+                updatedAt: new Date().toISOString()
+              })
+              .eq('id', existingStatus.id);
+
+            if (error) {
+              console.error(`Error updating route to missed:`, error);
+            } else {
+              console.log(`Marked route as missed: ${barangayName} - ${streetName}`);
+            }
+          } else if (!existingStatus) {
+            // Insert new missed status (only if no status exists)
+            const { error } = await supabase
+              .from('collection_status')
+              .insert({
+                id: `${userId}-${schedule.id}-${streetName}-${todayDate}-${Date.now()}-missed`,
+                scheduleId: schedule.id,
+                collectorId: userId,
+                streetName: streetName,
+                streetId: streetId,
+                barangayName: barangayName,
+                collectionDate: todayDate,
+                status: 'missed',
+                markedAt: markedAt,
+                markedBy: markedBy,
+                updatedAt: new Date().toISOString()
+              });
+
+            if (error) {
+              console.error(`Error recording missed route:`, error);
+            } else {
+              console.log(`Recorded route as missed: ${barangayName} - ${streetName}`);
+            }
+          }
+        } else {
+          console.log(`Route already has status '${existingStatus.status}', skipping: ${barangayName} - ${streetName}`);
+        }
+      }
+    } catch (error) {
+      console.error('Error marking remaining routes as missed:', error);
+    }
+  };
+
+  // Record all remaining routes as skipped when truck is full (only for truck full, not when stopping)
+  const recordRemainingRoutesAsSkipped = async (userId: string, truckNo: string, reason: 'full') => {
+    try {
+      const todayDate = new Date().toISOString().split('T')[0];
+      
+      // Get all schedules for this collector to get route information
+      const collectorSchedules = await databaseService.getSchedulesByCollectorId(userId);
+      
+      // Get today's day abbreviation
+      const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+      const todayDay = days[new Date().getDay()];
+      const dayAbbreviations: Record<string, string> = {
+        'Monday': 'Mon',
+        'Tuesday': 'Tue',
+        'Wednesday': 'Wed',
+        'Thursday': 'Thu',
+        'Friday': 'Fri',
+        'Saturday': 'Sat'
+      };
+      const todayDayAbbr = dayAbbreviations[todayDay];
+
+      // Get all schedules for today
+      const todaySchedules = collectorSchedules.filter(schedule => 
+        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(todayDayAbbr)
+      );
+
+      // For each route scheduled for today, check if it already has a status
+      // If not, mark as skipped (because collection was stopped or truck is full)
+      for (const schedule of todaySchedules) {
+        const streetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name[0] 
+          : schedule.street_name || '';
+        const barangayName = Array.isArray(schedule.barangay_name) 
+          ? schedule.barangay_name[0] 
+          : schedule.barangay_name || '';
+
+        if (!streetName && !barangayName) continue;
+
+        // Check if status already exists using schema unique key (scheduleId + streetName + collectionDate)
+        const { data: existingStatus } = await supabase
+          .from('collection_status')
+          .select('*')
+          .eq('scheduleId', schedule.id)
+          .eq('streetName', streetName)
+          .eq('collectionDate', todayDate)
+          .maybeSingle();
+
+        const streetId = Array.isArray(schedule.street_id) ? schedule.street_id[0] : schedule.street_id || null;
+        const markedAt = new Date().toISOString();
+        const markedBy = userId;
+
+        // Only create status if it doesn't exist (don't overwrite 'collected' statuses)
+        if (!existingStatus) {
+          const { error } = await supabase
+            .from('collection_status')
+            .insert({
+              id: `${userId}-${schedule.id}-${streetName}-${todayDate}-${Date.now()}-${reason}`,
+              scheduleId: schedule.id,
+              collectorId: userId,
+              streetName: streetName,
+              streetId: streetId,
+              barangayName: barangayName,
+              collectionDate: todayDate,
+              status: 'skipped',
+              markedAt: markedAt,
+              markedBy: markedBy,
+              updatedAt: new Date().toISOString()
+            });
+
+          if (error) {
+            console.error(`Error recording skipped route (${reason}):`, error);
+          } else {
+            console.log(`Recorded route as skipped (${reason}): ${barangayName} - ${streetName}`);
+          }
+        } else if (existingStatus.status === 'collected') {
+          // If status is 'collected', update it to 'skipped' since collection was stopped/full
+          const { error } = await supabase
+            .from('collection_status')
+            .update({ 
+              status: 'skipped',
+              markedAt: markedAt,
+              markedBy: markedBy,
+              updatedAt: new Date().toISOString()
+            })
+            .eq('id', existingStatus.id);
+
+          if (error) {
+            console.error(`Error updating route status to skipped (${reason}):`, error);
+          } else {
+            console.log(`Updated route status to skipped (${reason}): ${barangayName} - ${streetName}`);
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Error recording remaining routes as skipped:', error);
+    }
   };
 
   const updateTruckPosition = (lat: number, lng: number) => {
@@ -926,6 +1571,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           await databaseService.updateTruckStatus(truckNo, false, userId, false, null, null);
           console.log(`Truck ${truckNo} stopped collecting - GPS cleared`);
         }
+
+        // Don't mark routes as skipped when stopping - wait until end of day to mark as missed
+        // Routes will remain visible if collector starts collecting again on the same day
+        console.log('Collection stopped - routes will remain available for today');
       }
       
       if (truckMarkerRef.current && truckNo) {
@@ -960,6 +1609,9 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           currentStatus?.latitude,
           currentStatus?.longitude
         );
+
+        // Record collection status for all remaining routes as 'skipped' (truck full)
+        await recordRemainingRoutesAsSkipped(userId, truckNo, 'full');
       }
       
       if (truckMarkerRef.current) {
@@ -1141,8 +1793,10 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
             right: 0,
             bottom: 0,
             padding: '0.75rem 1rem 1.25rem',
-            background: 'transparent',
+            background: 'linear-gradient(to top, rgba(20, 20, 20, 0.98) 0%, rgba(20, 20, 20, 0.95) 100%)',
+            backdropFilter: 'blur(10px)',
             zIndex: 10000,
+            borderTop: '1px solid #2a2a2a',
           }}
         >
           <div
@@ -1150,6 +1804,7 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
               display: 'flex',
               justifyContent: 'space-between',
               gap: '0.75rem',
+              marginBottom: '0.75rem',
             }}
           >
             <button
@@ -1167,6 +1822,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 boxShadow: '0 14px 28px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)',
                 zIndex: 10001,
                 position: 'relative',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.02)';
+                e.currentTarget.style.boxShadow = '0 16px 32px rgba(59, 130, 246, 0.7), 0 0 24px rgba(59, 130, 246, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 14px 28px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)';
               }}
             >
               Stop Collecting
@@ -1187,6 +1851,15 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 boxShadow: '0 16px 32px rgba(239, 68, 68, 0.7)',
                 zIndex: 10001,
                 position: 'relative',
+                transition: 'all 0.2s ease',
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'scale(1.02)';
+                e.currentTarget.style.boxShadow = '0 18px 36px rgba(239, 68, 68, 0.8), 0 0 24px rgba(239, 68, 68, 0.4)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'scale(1)';
+                e.currentTarget.style.boxShadow = '0 16px 32px rgba(239, 68, 68, 0.7)';
               }}
             >
               FULL
@@ -1206,27 +1879,155 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
                 const displayText = location.streetId || location.street || location.barangay;
                 const fullText = `${displayText}${location.barangay ? ` / ${location.barangay}` : ''}`;
                 const isSelected = selectedStreetId === location.scheduleId;
+                
+                // Get route status from collection_status table
+                const routeStatus = getRouteStatus(location);
+                const isCompleted = routeStatus === 'collected';
+                const isSkipped = routeStatus === 'skipped';
+                const isMissed = routeStatus === 'missed';
+                const isClickable = !isCompleted && !isSkipped && !isMissed; // Disable if already completed, skipped, or missed
+                
+                // Get schedule info for this location
+                const schedule = schedules.find(s => s.id === location.scheduleId);
+                const collectionTime = schedule?.collection_time || '08:00';
+                
+                // Format time to 12-hour format
+                const formatTime = (time24: string) => {
+                  if (!time24) return '08:00';
+                  const [hours, minutes] = time24.split(':');
+                  const hour = parseInt(hours, 10);
+                  const ampm = hour >= 12 ? 'PM' : 'AM';
+                  const hour12 = hour % 12 || 12;
+                  return `${hour12}:${minutes} ${ampm}`;
+                };
 
                 return (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => handleStreetSelect(location)}
-                    style={{
-                      padding: '0.75rem 1rem',
-                      borderRadius: 12,
-                      border: '2px solid',
-                      borderColor: isSelected ? '#22c55e' : '#3b82f6',
-                      background: isSelected ? 'rgba(34, 197, 94, 0.2)' : 'rgba(26, 26, 26, 0.95)',
-                      color: isSelected ? '#22c55e' : '#3b82f6',
-                      fontWeight: 600,
-                      fontSize: '0.875rem',
-                      cursor: 'pointer',
-                      textAlign: 'left',
-                    }}
-                  >
-                    {fullText}
-                  </button>
+                  <div key={index} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <button
+                      type="button"
+                      onClick={() => isClickable && handleStreetSelect(location)}
+                      disabled={!isClickable}
+                      style={{
+                        padding: '0.75rem 1rem',
+                        borderRadius: 12,
+                        border: '2px solid',
+                        borderColor: isCompleted ? '#22c55e' : isSkipped ? '#f59e0b' : isMissed ? '#ef4444' : (isSelected ? '#22c55e' : '#3b82f6'),
+                        background: isCompleted ? 'rgba(34, 197, 94, 0.3)' : isSkipped ? 'rgba(245, 158, 11, 0.3)' : isMissed ? 'rgba(239, 68, 68, 0.3)' : (isSelected ? 'rgba(34, 197, 94, 0.2)' : 'rgba(26, 26, 26, 0.95)'),
+                        color: isCompleted ? '#22c55e' : isSkipped ? '#f59e0b' : isMissed ? '#ef4444' : (isSelected ? '#22c55e' : '#3b82f6'),
+                        fontWeight: 600,
+                        fontSize: '0.875rem',
+                        cursor: isClickable ? 'pointer' : 'not-allowed',
+                        opacity: isClickable ? 1 : 0.7,
+                        textAlign: 'left',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '0.25rem',
+                        transition: 'all 0.2s ease',
+                        position: 'relative',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (isClickable && !isSelected) {
+                          e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
+                          e.currentTarget.style.transform = 'scale(1.01)';
+                        }
+                      }}
+                      onMouseLeave={(e) => {
+                        if (isClickable && !isSelected) {
+                          e.currentTarget.style.background = 'rgba(26, 26, 26, 0.95)';
+                          e.currentTarget.style.transform = 'scale(1)';
+                        }
+                      }}
+                    >
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span>{fullText}</span>
+                        {(isCompleted || isSkipped || isMissed) && (
+                          <span style={{
+                            fontSize: '0.7rem',
+                            padding: '0.25rem 0.5rem',
+                            borderRadius: 6,
+                            background: isCompleted ? '#22c55e' : isSkipped ? '#f59e0b' : '#ef4444',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            textTransform: 'uppercase',
+                          }}>
+                            {isCompleted ? '✓ Done' : isSkipped ? '⊘ Skipped' : '✗ Missed'}
+                          </span>
+                        )}
+                      </div>
+                      {schedule && (
+                        <div style={{ fontSize: '0.75rem', color: isSelected ? '#86efac' : (isCompleted ? '#86efac' : isSkipped ? '#fbbf24' : isMissed ? '#fca5a5' : '#93c5fd'), display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <span>⏰ {formatTime(collectionTime)}</span>
+                          {schedule.days && (
+                            <span>📅 {schedule.days.join(', ')}</span>
+                          )}
+                        </div>
+                      )}
+                    </button>
+                    
+                    {/* Complete and Skipped buttons - show when route is selected and not already completed/skipped */}
+                    {isSelected && selectedRouteForAction?.scheduleId === location.scheduleId && isClickable && (
+                      <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        <button
+                          type="button"
+                          onClick={() => handleRouteComplete(location)}
+                          style={{
+                            flex: 1,
+                            padding: '0.625rem 1rem',
+                            borderRadius: 12,
+                            border: '2px solid #22c55e',
+                            background: '#22c55e',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.875rem',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(34, 197, 94, 0.4)',
+                            transition: 'all 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#16a34a';
+                            e.currentTarget.style.transform = 'scale(1.02)';
+                            e.currentTarget.style.boxShadow = '0 6px 16px rgba(34, 197, 94, 0.5)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#22c55e';
+                            e.currentTarget.style.transform = 'scale(1)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(34, 197, 94, 0.4)';
+                          }}
+                        >
+                          Complete
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleRouteSkipped(location)}
+                          style={{
+                            flex: 1,
+                            padding: '0.625rem 1rem',
+                            borderRadius: 12,
+                            border: '2px solid #f59e0b',
+                            background: '#f59e0b',
+                            color: '#ffffff',
+                            fontWeight: 700,
+                            fontSize: '0.875rem',
+                            cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(245, 158, 11, 0.4)',
+                            transition: 'all 0.2s ease',
+                          }}
+                          onMouseEnter={(e) => {
+                            e.currentTarget.style.background = '#d97706';
+                            e.currentTarget.style.transform = 'scale(1.02)';
+                            e.currentTarget.style.boxShadow = '0 6px 16px rgba(245, 158, 11, 0.5)';
+                          }}
+                          onMouseLeave={(e) => {
+                            e.currentTarget.style.background = '#f59e0b';
+                            e.currentTarget.style.transform = 'scale(1)';
+                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(245, 158, 11, 0.4)';
+                          }}
+                        >
+                          Skipped
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
@@ -1244,74 +2045,6 @@ const CollectorRoutePage: React.FC<CollectorRoutePageProps> = ({ onBack, selecte
           { text: 'Yes, Full', handler: onTruckFullConfirm },
         ]}
       />
-
-      <IonModal isOpen={showCollectionStatusModal} onDidDismiss={() => setShowCollectionStatusModal(false)}>
-        <IonHeader>
-          <IonToolbar>
-            <IonButtons slot="start">
-              <IonButton onClick={() => setShowCollectionStatusModal(false)}>Close</IonButton>
-            </IonButtons>
-            <IonTitle>Collection Status</IonTitle>
-            <IonButtons slot="end">
-              <IonButton onClick={loadStreetsFromSchedule}>Refresh</IonButton>
-            </IonButtons>
-          </IonToolbar>
-        </IonHeader>
-        <IonContent>
-          {loadingStreets ? (
-            <div style={{ padding: '2rem', textAlign: 'center' }}>Loading streets...</div>
-          ) : streets.length === 0 ? (
-            <div style={{ padding: '2rem', textAlign: 'center', color: '#6b7280' }}>
-              <p>No streets found in today's schedule.</p>
-            </div>
-          ) : (
-            <IonList>
-              {streets.map((item, index) => (
-                <IonItem key={`${item.street}-${item.barangay}-${index}`}>
-                  <IonLabel>
-                    <h2>{item.street}</h2>
-                    <p>{item.barangay}</p>
-                  </IonLabel>
-                  <div slot="end" style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                    {item.status && (
-                      <IonBadge color={
-                        item.status === 'done' ? 'success' :
-                        item.status === 'collected' ? 'primary' : 'warning'
-                      }>
-                        {item.status}
-                      </IonBadge>
-                    )}
-                    <IonButton
-                      fill="clear"
-                      size="small"
-                      onClick={() => updateStreetStatus(item.street, item.barangay, 'done')}
-                      color={item.status === 'done' ? 'success' : 'medium'}
-                    >
-                      <IonIcon icon={checkmarkCircleOutline} slot="icon-only" />
-                    </IonButton>
-                    <IonButton
-                      fill="clear"
-                      size="small"
-                      onClick={() => updateStreetStatus(item.street, item.barangay, 'skipped')}
-                      color={item.status === 'skipped' ? 'warning' : 'medium'}
-                    >
-                      <IonIcon icon={closeCircleOutline} slot="icon-only" />
-                    </IonButton>
-                    <IonButton
-                      fill="clear"
-                      size="small"
-                      onClick={() => updateStreetStatus(item.street, item.barangay, 'collected')}
-                      color={item.status === 'collected' ? 'primary' : 'medium'}
-                    >
-                      <IonIcon icon={timeOutline} slot="icon-only" />
-                    </IonButton>
-                  </div>
-                </IonItem>
-              ))}
-            </IonList>
-          )}
-        </IonContent>
-      </IonModal>
     </IonPage>
   );
 };

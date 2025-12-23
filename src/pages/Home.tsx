@@ -16,9 +16,18 @@ import {
   IonItem,
   IonLabel,
   IonModal,
+  IonToast,
+  IonInput,
+  IonTextarea,
+  IonSelect,
+  IonSelectOption,
+  IonRadioGroup,
+  IonRadio,
+  IonAlert,
+  IonSpinner,
 } from '@ionic/react';
 import { useHistory } from 'react-router-dom';
-import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline, closeOutline } from 'ionicons/icons';
+import { menuOutline, calendarOutline, timeOutline, homeOutline, personOutline, logInOutline, logOutOutline, personAddOutline, busOutline, playOutline, alertCircleOutline, documentTextOutline, closeOutline, listOutline } from 'ionicons/icons';
 import { logout, getCurrentUserId } from '../utils/auth';
 import useCurrentUser from '../state/useCurrentUser';
 import NotificationBell from '../components/NotificationBell';
@@ -32,7 +41,53 @@ interface ScheduleItem {
   day: string;
   time: string;
   street: string;
+  scheduleId?: string;
+  collectorId?: string;
+  truckNo?: string;
 }
+
+// Helper function to format time from HH:MM to 12-hour format
+const formatTime = (timeStr: string): string => {
+  if (!timeStr) return '8:00 AM';
+  const [hours, minutes] = timeStr.split(':');
+  const hour = parseInt(hours, 10);
+  const ampm = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 || 12;
+  return `${hour12}:${minutes || '00'} ${ampm}`;
+};
+
+// Helper function to get week dates (responsive to current date)
+const getWeekDates = (weekOffset: number = 0) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const currentDay = today.getDay();
+  const monday = new Date(today);
+  monday.setDate(today.getDate() - (currentDay === 0 ? 6 : currentDay - 1));
+  monday.setHours(0, 0, 0, 0);
+  
+  // Apply week offset
+  if (weekOffset !== 0) {
+    monday.setDate(monday.getDate() + (weekOffset * 7));
+  }
+  
+  const week = [];
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  for (let i = 0; i < 7; i++) {
+    const date = new Date(monday);
+    date.setDate(monday.getDate() + i);
+    date.setHours(0, 0, 0, 0);
+    const todayDate = new Date();
+    todayDate.setHours(0, 0, 0, 0);
+    week.push({
+      day: dayNames[i],
+      date: date.getDate(),
+      fullDate: new Date(date),
+      isToday: date.getTime() === todayDate.getTime(),
+      isPast: date < todayDate
+    });
+  }
+  return week;
+};
 
 // Day abbreviations mapping
 const DAY_ABBREVIATIONS: { [key: string]: string } = {
@@ -60,6 +115,31 @@ const Home: React.FC = () => {
   const { user } = useCurrentUser();
   const [menuEvent, setMenuEvent] = useState<MouseEvent | null>(null);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
+  const [residentSchedules, setResidentSchedules] = useState<ScheduleItem[]>([]);
+  const [isLoadingSchedules, setIsLoadingSchedules] = useState(false);
+  const [showEcoFriendlyModal, setShowEcoFriendlyModal] = useState(false);
+  const [showSustainableModal, setShowSustainableModal] = useState(false);
+  const [ecoSlideIndex, setEcoSlideIndex] = useState(0);
+  const [sustainableSlideIndex, setSustainableSlideIndex] = useState(0);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+  const [showCreateReportModal, setShowCreateReportModal] = useState(false);
+  const [collectionStatuses, setCollectionStatuses] = useState<any[]>([]);
+  const [selectedScheduleDate, setSelectedScheduleDate] = useState<Date>(new Date());
+  const [allSchedulesData, setAllSchedulesData] = useState<any[]>([]);
+  const [currentWeekOffset, setCurrentWeekOffset] = useState(0); // 0 = current week, -1 = previous, 1 = next
+  const weekDates = getWeekDates(currentWeekOffset);
+  
+  // Create Report Modal State
+  const [reportType, setReportType] = useState<'type' | 'select' | null>(null);
+  const [selectedOption, setSelectedOption] = useState<string>('');
+  const [customReport, setCustomReport] = useState('');
+  const [barangay, setBarangay] = useState('');
+  const [truckNo, setTruckNo] = useState('');
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [showReportAlert, setShowReportAlert] = useState(false);
+  const [reportAlertMessage, setReportAlertMessage] = useState('');
+  const [reportAlertHeader, setReportAlertHeader] = useState('');
 
   // All weekly schedules
   const allSchedules: ScheduleItem[] = [
@@ -78,16 +158,149 @@ const Home: React.FC = () => {
     return days[new Date().getDay()];
   };
 
+  // Eco-friendly slides data
+  const ecoSlides = [
+    {
+      image: 'https://images.unsplash.com/photo-1587426368191-9b10ad7ccc0a?w=800',
+      title: 'Reduce, Reuse, Recycle',
+      description: 'The three R\'s of waste management help minimize environmental impact and conserve resources.'
+    },
+    {
+      image: 'https://images.unsplash.com/photo-1621451537084-482c73073a0f?w=800',
+      title: 'Composting Organic Waste',
+      description: 'Transform food scraps and yard waste into nutrient-rich compost for gardens.'
+    },
+    {
+      image: 'https://images.unsplash.com/photo-1610878180933-123728745d22?w=800',
+      title: 'Plastic Alternatives',
+      description: 'Switching to reusable and biodegradable materials reduces plastic pollution.'
+    }
+  ];
+
+  // Sustainable spotlights data
+  const sustainableSpotlights = [
+    {
+      image: 'https://images.unsplash.com/photo-1473341304170-971dccb5ac1e?w=800',
+      title: 'Smart Waste Management',
+      description: 'Technology-driven solutions for efficient and sustainable waste collection.'
+    },
+    {
+      image: 'https://images.unsplash.com/photo-1593113616828-c4b68e50e3b7?w=800',
+      title: 'Green Energy Initiatives',
+      description: 'Solar-powered facilities and renewable energy systems for waste processing.'
+    },
+    {
+      image: 'https://images.unsplash.com/photo-1569163139394-de44cb75ae9a?w=800',
+      title: 'Circular Economy',
+      description: 'Creating closed-loop systems where waste becomes valuable resources.'
+    }
+  ];
+
+  // Cycle through slides
+  const cycleSlide = (direction: 'prev' | 'next', total: number, setIndex: React.Dispatch<React.SetStateAction<number>>) => {
+    setIndex((prev) => {
+      if (direction === 'next') {
+        return (prev + 1) % total;
+      } else {
+        return (prev - 1 + total) % total;
+      }
+    });
+  };
+
   // Get schedules for today
   const getTodaySchedules = (): ScheduleItem[] => {
     const today = getCurrentDay();
-    return residentSchedules.filter(schedule => schedule.day === today);
+    return residentSchedules.filter((schedule: ScheduleItem) => schedule.day === today);
   };
 
   // Get schedules for other days
   const getOtherDaySchedules = (): ScheduleItem[] => {
     const today = getCurrentDay();
-    return residentSchedules.filter(schedule => schedule.day !== today);
+    return residentSchedules.filter((schedule: ScheduleItem) => schedule.day !== today);
+  };
+
+  // Get schedule status using updated collection_status schema
+  const getScheduleStatus = (scheduleItem: ScheduleItem, scheduleDate: Date): 'pending' | 'completed' | 'skipped' | 'in-progress' => {
+    if (!scheduleItem.scheduleId) return 'pending';
+    
+    const dateStr = scheduleDate.toISOString().split('T')[0];
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const scheduleDateOnly = new Date(scheduleDate);
+    scheduleDateOnly.setHours(0, 0, 0, 0);
+    
+    const isPastDate = scheduleDateOnly < today;
+    
+    // Find the original schedule data to get barangay and street info
+    const originalSchedule = allSchedulesData.find(s => s.id === scheduleItem.scheduleId);
+    if (!originalSchedule) return 'pending';
+    
+    const barangayName = Array.isArray(originalSchedule.barangay_name) 
+      ? originalSchedule.barangay_name[0] 
+      : originalSchedule.barangay_name || '';
+    const streetName = scheduleItem.street;
+    
+    // Find collection status using updated schema (scheduleId + streetName + collectionDate)
+    const collectionStatus = collectionStatuses.find(cs => {
+      const matchesSchedule = cs.scheduleId === scheduleItem.scheduleId;
+      const matchesDate = cs.collectionDate === dateStr;
+      const matchesStreet = cs.streetName === streetName;
+      const matchesBarangay = cs.barangayName === barangayName;
+      return matchesSchedule && matchesDate && matchesStreet && matchesBarangay;
+    });
+    
+    if (collectionStatus) {
+      if (collectionStatus.status === 'collected') return 'completed';
+      if (collectionStatus.status === 'skipped' || collectionStatus.status === 'missed') return 'skipped';
+      if (collectionStatus.status === 'pending') return 'in-progress';
+    }
+    
+    // If date is past and no collection status, mark as skipped (missed)
+    if (isPastDate) return 'skipped';
+    return 'pending';
+  };
+
+  // Get schedules for a specific date (all statuses)
+  const getSchedulesForDate = (date: Date, showAllStatuses: boolean = false): ScheduleItem[] => {
+    const dayIndex = date.getDay();
+    const dayName = dayIndex === 0 ? 'Sunday' : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIndex - 1];
+    
+    let filtered = residentSchedules.filter(schedule => schedule.day === dayName);
+    
+    if (!showAllStatuses) {
+      // Only show pending schedules in the main view
+      filtered = filtered.filter(schedule => {
+        const status = getScheduleStatus(schedule, date);
+        return status === 'pending';
+      });
+    }
+    
+    return filtered;
+  };
+
+  // Get all schedules for the week grouped by day
+  const getSchedulesForWeek = (weekOffset: number = 0): { [key: string]: ScheduleItem[] } => {
+    const week = getWeekDates(weekOffset);
+    const schedulesByDay: { [key: string]: ScheduleItem[] } = {};
+    
+    week.forEach(weekDay => {
+      const dayIndex = weekDay.fullDate.getDay();
+      const dayName = dayIndex === 0 ? 'Sunday' : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIndex - 1];
+      
+      const schedulesForDay = residentSchedules
+        .filter(schedule => schedule.day === dayName)
+        .map(schedule => ({
+          ...schedule,
+          status: getScheduleStatus(schedule, weekDay.fullDate),
+          date: weekDay.fullDate
+        }));
+      
+      if (schedulesForDay.length > 0) {
+        schedulesByDay[dayName] = schedulesForDay;
+      }
+    });
+    
+    return schedulesByDay;
   };
 
   // Load resident schedules from database
@@ -169,21 +382,25 @@ const Home: React.FC = () => {
           return;
         }
         
-        days.forEach(dayAbbr => {
+        days.forEach((dayAbbr: string) => {
           const dayName = DAY_NAMES[dayAbbr] || dayAbbr;
           
           // If multiple streets, create entries for each
           if (streetNames.length > 0) {
-            streetNames.forEach(street => {
+            streetNames.forEach((street: string) => {
               if (street) {
-                const key = `${dayName}-${street}`;
+                  const key = `${dayName}-${street}`;
                 if (!scheduleMap.has(key)) {
-                  // Default time (can be enhanced later with actual time from schedule)
-                  const time = '7:00 AM'; // Default time
+                  // Get time from schedule or use default
+                  const scheduleTime = schedule.collection_time || '08:00';
+                  const time = formatTime(scheduleTime);
                   scheduleMap.set(key, {
                     day: dayName,
                     time: time,
-                    street: street
+                    street: street,
+                    scheduleId: schedule.id,
+                    collectorId: schedule.collector_id,
+                    truckNo: schedule.truck_no
                   });
                   console.log(`  ✓ Added: ${dayName} - ${street}`);
                 } else {
@@ -199,11 +416,15 @@ const Home: React.FC = () => {
             
             const key = `${dayName}-${barangayName}`;
             if (!scheduleMap.has(key)) {
-              const time = '7:00 AM';
+              const scheduleTime = schedule.collection_time || '08:00';
+              const time = formatTime(scheduleTime);
               scheduleMap.set(key, {
                 day: dayName,
                 time: time,
-                street: barangayName
+                street: barangayName,
+                scheduleId: schedule.id,
+                collectorId: schedule.collector_id,
+                truckNo: schedule.truck_no
               });
               console.log(`  ✓ Added: ${dayName} - ${barangayName} (no street)`);
             } else {
@@ -232,6 +453,36 @@ const Home: React.FC = () => {
       });
 
       setResidentSchedules(sortedSchedules);
+      setAllSchedulesData(schedules);
+
+      // Load collection statuses for the current week
+      const weekStart = new Date();
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); // Monday
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const { data: collectionStatusData } = await supabase
+        .from('collection_status')
+        .select('*')
+        .gte('collectionDate', weekStart.toISOString().split('T')[0])
+        .lte('collectionDate', weekEnd.toISOString().split('T')[0]);
+
+      if (collectionStatusData) {
+        const mappedStatuses = collectionStatusData.map((status: any) => ({
+          id: status.id,
+          scheduleId: status.scheduleId || status.schedule_id,
+          collectorId: status.collectorId || status.collector_id,
+          streetName: status.streetName || status.street_name || status.street || '',
+          streetId: status.streetId || status.street_id || null,
+          barangayName: status.barangayName || status.barangay_name || status.barangay || '',
+          status: status.status || 'pending',
+          collectionDate: status.collectionDate || status.collection_date,
+          updatedAt: status.updatedAt || status.updated_at
+        }));
+        setCollectionStatuses(mappedStatuses);
+      }
     } catch (error) {
       console.error('Error loading resident schedules:', error);
       setResidentSchedules([]);
@@ -278,6 +529,65 @@ const Home: React.FC = () => {
     return () => clearInterval(reportInterval);
   }, [user]);
 
+  // Load collection statuses for the selected week (updates when week changes)
+  const loadCollectionStatusesForWeek = async (weekOffset: number) => {
+    try {
+      const weekDates = getWeekDates(weekOffset);
+      if (weekDates.length === 0) return;
+
+      const weekStart = new Date(weekDates[0].fullDate);
+      weekStart.setHours(0, 0, 0, 0);
+      const weekEnd = new Date(weekDates[weekDates.length - 1].fullDate);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const { data: collectionStatusData } = await supabase
+        .from('collection_status')
+        .select('*')
+        .gte('collectionDate', weekStart.toISOString().split('T')[0])
+        .lte('collectionDate', weekEnd.toISOString().split('T')[0]);
+
+      if (collectionStatusData) {
+        const mappedStatuses = collectionStatusData.map((status: any) => ({
+          id: status.id,
+          scheduleId: status.scheduleId || status.schedule_id,
+          collectorId: status.collectorId || status.collector_id,
+          streetName: status.streetName || status.street_name || status.street || '',
+          streetId: status.streetId || status.street_id || null,
+          barangayName: status.barangayName || status.barangay_name || status.barangay || '',
+          status: status.status || 'pending',
+          collectionDate: status.collectionDate || status.collection_date,
+          updatedAt: status.updatedAt || status.updated_at
+        }));
+        setCollectionStatuses(mappedStatuses);
+      }
+    } catch (error) {
+      console.error('Error loading collection statuses:', error);
+    }
+  };
+
+  // Load collection statuses when week changes
+  useEffect(() => {
+    if (user?.role === 'resident' && allSchedulesData.length > 0) {
+      loadCollectionStatusesForWeek(currentWeekOffset);
+    }
+  }, [currentWeekOffset, user, allSchedulesData]);
+
+  // Auto-refresh collection statuses every 30 seconds to update schedule status
+  useEffect(() => {
+    if (user?.role !== 'resident' || allSchedulesData.length === 0) return;
+
+    const refreshCollectionStatuses = async () => {
+      await loadCollectionStatusesForWeek(currentWeekOffset);
+    };
+
+    // Refresh immediately
+    refreshCollectionStatuses();
+
+    // Then refresh every 30 seconds
+    const interval = setInterval(refreshCollectionStatuses, 30000);
+    return () => clearInterval(interval);
+  }, [user, allSchedulesData, currentWeekOffset]);
+
   // Refresh function - reload notifications and report status
   const handleRefresh = async () => {
     const userId = getCurrentUserId();
@@ -285,6 +595,23 @@ const Home: React.FC = () => {
       await initializeResidentNotifications(userId);
       await checkReportStatusChanges(userId);
       await loadResidentSchedules();
+    }
+  };
+
+  // Handle authentication check for protected actions
+  const handleAuthRequired = (action: 'report' | 'viewReports') => {
+    if (!user) {
+      setToastMessage('You must log in first before accessing this feature.');
+      setShowToast(true);
+      return false;
+    }
+    return true;
+  };
+
+  // Handle Reports button click - navigate directly to View Reports
+  const handleReportsClick = () => {
+    if (handleAuthRequired('report')) {
+      history.push('/resident/reports');
     }
   };
 
@@ -479,7 +806,6 @@ const Home: React.FC = () => {
                     <IonIcon icon={calendarOutline} style={{ fontSize: '1rem', color: '#22c55e', filter: 'drop-shadow(0 0 8px rgba(34, 197, 94, 0.6))' }} />
                     <span style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>Next collection</span>
                   </div>
-                  <div style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>Click truck icon below to track</div>
                 </div>
               </div>
             </div>
@@ -537,55 +863,236 @@ const Home: React.FC = () => {
                 </button>
               </div>
 
+              {/* Week Date Slider */}
+              <div style={{ 
+                display: 'flex', 
+                gap: '0.5rem', 
+                marginBottom: '1rem',
+                overflowX: 'auto',
+                paddingBottom: '0.5rem',
+                scrollbarWidth: 'none',
+                msOverflowStyle: 'none'
+              }}>
+                <style>
+                  {`
+                    div::-webkit-scrollbar {
+                      display: none;
+                    }
+                  `}
+                </style>
+                {getWeekDates(currentWeekOffset).map((weekDay, index) => {
+                  const isSelected = selectedScheduleDate.getTime() === weekDay.fullDate.getTime();
+                  const schedulesForDay = getSchedulesForDate(weekDay.fullDate, true); // Show all statuses in slider
+                  const routeCount = schedulesForDay.length;
+                  
+                  return (
+                    <button
+                      key={index}
+                      type="button"
+                      onClick={() => setSelectedScheduleDate(weekDay.fullDate)}
+                      style={{
+                        minWidth: '60px',
+                        padding: '0.75rem 0.5rem',
+                        borderRadius: '12px',
+                        border: isSelected ? '2px solid #3b82f6' : '1px solid var(--app-border)',
+                        background: isSelected 
+                          ? 'linear-gradient(135deg, rgba(59, 130, 246, 0.1), rgba(59, 130, 246, 0.05))'
+                          : weekDay.isToday
+                          ? 'linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(34, 197, 94, 0.05))'
+                          : 'var(--app-surface)',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease',
+                        boxShadow: isSelected 
+                          ? '0 4px 12px rgba(59, 130, 246, 0.3)'
+                          : weekDay.isToday
+                          ? '0 2px 8px rgba(34, 197, 94, 0.2)'
+                          : '0 1px 4px rgba(0, 0, 0, 0.1)',
+                      }}
+                    >
+                      <div style={{ 
+                        fontSize: '0.75rem', 
+                        color: isSelected ? '#3b82f6' : weekDay.isToday ? '#22c55e' : 'var(--app-text-secondary)',
+                        fontWeight: isSelected || weekDay.isToday ? 600 : 400,
+                        marginBottom: '0.25rem'
+                      }}>
+                        {weekDay.day}
+                      </div>
+                      <div style={{ 
+                        fontSize: '1.1rem', 
+                        fontWeight: 700,
+                        color: isSelected ? '#3b82f6' : weekDay.isToday ? '#22c55e' : 'var(--app-text-primary)',
+                        marginBottom: '0.25rem'
+                      }}>
+                        {weekDay.date}
+                      </div>
+                      <div style={{ 
+                        fontSize: '0.7rem', 
+                        color: isSelected ? '#3b82f6' : 'var(--app-text-secondary)',
+                        fontWeight: 500
+                      }}>
+                        {routeCount} {routeCount === 1 ? 'route' : 'routes'}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Selected Date Schedule List */}
               {isLoadingSchedules ? (
                 <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
                   Loading schedule...
                 </div>
-              ) : residentSchedules.length === 0 ? (
-                <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
-                  No collection schedule available. Please update your barangay in your profile.
-                </div>
-              ) : (
-                (() => {
-                  const today = getCurrentDay();
-                  const todaySchedules = residentSchedules.filter(s => s.day === today);
-                  const otherSchedules = residentSchedules.filter(s => s.day !== today);
+              ) : (() => {
+                const schedulesForSelectedDate = getSchedulesForDate(selectedScheduleDate, true); // Show all statuses
+                
+                if (schedulesForSelectedDate.length === 0) {
+                  return (
+                    <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
+                      No collection schedules for this date.
+                    </div>
+                  );
+                }
+                
+                // Get original schedule data for barangay name
+                return schedulesForSelectedDate.map((item, index) => {
+                  const status = getScheduleStatus(item, selectedScheduleDate);
+                  const originalSchedule = allSchedulesData.find(s => s.id === item.scheduleId);
+                  const barangayName = originalSchedule 
+                    ? (Array.isArray(originalSchedule.barangay_name) 
+                        ? originalSchedule.barangay_name[0] 
+                        : originalSchedule.barangay_name || 'Unknown')
+                    : 'Unknown';
+                  const streetName = item.street;
                   
-                  // Show today's schedules first, then others (up to 3 total, prioritizing today)
-                  const displaySchedules = [...todaySchedules, ...otherSchedules].slice(0, 3);
-                  
-                  return displaySchedules.map((item, index) => {
-                    const isToday = item.day === today;
-                    return (
-                      <div
-                        key={`${item.day}-${item.street}-${index}`}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '0.7rem 0',
-                          borderBottom: index < displaySchedules.length - 1 ? '1px solid var(--app-border)' : 'none',
-                        }}
-                      >
-                        <div>
-                          <div style={{ 
-                            fontSize: '0.85rem', 
+                  return (
+                    <div
+                      key={`${item.day}-${item.street}-${index}`}
+                      style={{
+                        display: 'flex',
+                        background: 'var(--app-surface)',
+                        border: '1px solid var(--app-border)',
+                        borderRadius: '12px',
+                        overflow: 'hidden',
+                        marginBottom: '0.75rem',
+                        transition: 'all 0.2s',
+                      }}
+                    >
+                      {/* Status bar on left */}
+                      <div style={{
+                        width: '4px',
+                        background: status === 'completed' ? '#10b981' : 
+                                   status === 'skipped' ? '#ef4444' : 
+                                   status === 'in-progress' ? '#3b82f6' : '#f59e0b',
+                        flexShrink: 0,
+                      }} />
+                      <div style={{ 
+                        flex: 1, 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        padding: '1rem',
+                        gap: '1rem'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          {/* Barangay name as title */}
+                          <h4 style={{ 
+                            margin: '0 0 0.5rem 0', 
+                            fontSize: '1rem', 
                             fontWeight: 600, 
-                            color: isToday ? '#22c55e' : 'var(--app-text-primary)' 
+                            color: 'var(--app-text-primary)'
                           }}>
-                            {item.day} {isToday && '(Today)'}
+                            {barangayName}
+                          </h4>
+                          {/* Location and time details */}
+                          <div style={{ 
+                            display: 'flex', 
+                            alignItems: 'center', 
+                            gap: '0.75rem',
+                            flexWrap: 'wrap',
+                            fontSize: '0.875rem',
+                            color: 'var(--app-text-secondary)',
+                            marginBottom: '0.75rem'
+                          }}>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <span style={{ fontSize: '1rem' }}>📍</span>
+                              <span>{streetName || 'Zone'}</span>
+                            </span>
+                            <span style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+                              <span style={{ fontSize: '1rem' }}>🕐</span>
+                              <span>{item.time}</span>
+                            </span>
                           </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
+                          {/* Type tag */}
+                          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                            <span style={{ 
+                              padding: '0.25rem 0.75rem',
+                              background: '#f3f4f6',
+                              color: '#374151',
+                              borderRadius: '6px',
+                              fontSize: '0.75rem',
+                              fontWeight: 500
+                            }}>
+                              General
+                            </span>
+                          </div>
                         </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: 'var(--app-text-primary)' }}>
-                          <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem', color: '#22c55e', filter: isToday ? 'drop-shadow(0 0 6px rgba(34, 197, 94, 0.5))' : 'none' }} />
-                          <span style={{ color: '#22c55e', fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
+                        {/* Status badge */}
+                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                          {status === 'completed' ? (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: '#16a34a',
+                              fontWeight: 500
+                            }}>
+                              <span>✓</span>
+                              <span>completed</span>
+                            </div>
+                          ) : status === 'skipped' ? (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: '#ef4444',
+                              fontWeight: 500
+                            }}>
+                              <span>⚠</span>
+                              <span>missed</span>
+                            </div>
+                          ) : status === 'in-progress' ? (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: '#3b82f6',
+                              fontWeight: 500
+                            }}>
+                              <span>🕐</span>
+                              <span>in progress</span>
+                            </div>
+                          ) : (
+                            <div style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              gap: '0.5rem',
+                              fontSize: '0.875rem',
+                              color: '#f59e0b',
+                              fontWeight: 500
+                            }}>
+                              <span>🕐</span>
+                              <span>pending</span>
+                            </div>
+                          )}
                         </div>
                       </div>
-                    );
-                  });
-                })()
-              )}
+                    </div>
+                  );
+                });
+              })()}
             </div>
             
             {/* Decorative Elements in the Gap */}
@@ -855,67 +1362,10 @@ const Home: React.FC = () => {
                     text.style.color = 'var(--app-text-primary)';
                   }
                 }}
-                onClick={() => history.push('/resident/report')}
-              >
-                <IonIcon icon={alertCircleOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
-                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Report</span>
-              </button>
-              <button
-                type="button"
-                style={{
-                  border: '2px solid rgba(34, 197, 94, 0.4)',
-                  background: 'transparent',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  alignItems: 'center',
-                  padding: '0.5rem 0.75rem',
-                  borderRadius: '12px',
-                  fontSize: '0.7rem',
-                  cursor: 'pointer',
-                  transition: 'all 0.3s ease',
-                  boxShadow: '0 0 10px rgba(34, 197, 94, 0.2)',
-                  minWidth: '60px',
-                }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.borderColor = '#22c55e';
-                  e.currentTarget.style.boxShadow = '0 0 25px rgba(34, 197, 94, 0.6), 0 0 50px rgba(34, 197, 94, 0.4), inset 0 0 20px rgba(34, 197, 94, 0.1)';
-                  e.currentTarget.style.transform = 'translateY(-2px)';
-                  const icon = e.currentTarget.querySelector('ion-icon');
-                  const text = e.currentTarget.querySelector('span');
-                  if (icon) {
-                    icon.style.fontSize = '1.4rem';
-                    icon.style.color = '#22c55e';
-                    icon.style.filter = 'drop-shadow(0 0 10px rgba(34, 197, 94, 0.8))';
-                  }
-                  if (text) {
-                    text.style.opacity = '1';
-                    text.style.fontSize = '0.7rem';
-                    text.style.fontWeight = '700';
-                    text.style.color = '#22c55e';
-                  }
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.borderColor = 'rgba(34, 197, 94, 0.4)';
-                  e.currentTarget.style.boxShadow = '0 0 10px rgba(34, 197, 94, 0.2)';
-                  e.currentTarget.style.transform = 'translateY(0)';
-                  const icon = e.currentTarget.querySelector('ion-icon');
-                  const text = e.currentTarget.querySelector('span');
-                  if (icon) {
-                    icon.style.fontSize = '1.2rem';
-                    icon.style.color = 'var(--app-text-primary)';
-                    icon.style.filter = 'none';
-                  }
-                  if (text) {
-                    text.style.opacity = '0.7';
-                    text.style.fontSize = '0.65rem';
-                    text.style.fontWeight = '400';
-                    text.style.color = 'var(--app-text-primary)';
-                  }
-                }}
-                onClick={() => history.push('/resident/reports')}
+                onClick={handleReportsClick}
               >
                 <IonIcon icon={documentTextOutline} style={{ fontSize: '1.2rem', color: 'var(--app-text-primary)', transition: 'all 0.3s ease' }} />
-                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>View Reports</span>
+                <span style={{ color: 'var(--app-text-primary)', marginTop: '4px', fontSize: '0.65rem', opacity: 0.7, transition: 'all 0.3s ease' }}>Reports</span>
               </button>
               <button
                 type="button"
@@ -978,6 +1428,7 @@ const Home: React.FC = () => {
           </div>
         </div>
       </IonContent>
+
 
       {/* Header menu popover */}
       <IonPopover
@@ -1053,13 +1504,19 @@ const Home: React.FC = () => {
         </IonList>
       </IonPopover>
 
-      {/* Weekly Schedule Modal */}
-      <IonModal isOpen={showScheduleModal} onDidDismiss={() => setShowScheduleModal(false)}>
+      {/* Weekly Schedule Modal - All Routes by Day */}
+      <IonModal isOpen={showScheduleModal} onDidDismiss={() => {
+        setShowScheduleModal(false);
+        setCurrentWeekOffset(0); // Reset to current week when closing
+      }}>
         <IonHeader>
           <IonToolbar>
             <IonTitle>Weekly Schedule</IonTitle>
             <IonButtons slot="end">
-              <IonButton onClick={() => setShowScheduleModal(false)}>
+              <IonButton onClick={() => {
+                setShowScheduleModal(false);
+                setCurrentWeekOffset(0);
+              }}>
                 <IonIcon icon={closeOutline} />
               </IonButton>
             </IonButtons>
@@ -1068,94 +1525,181 @@ const Home: React.FC = () => {
         <IonContent>
           <div style={{ padding: '1.5rem', background: 'var(--app-bg-primary)', minHeight: '100%' }}>
             <div style={{ maxWidth: 480, margin: '0 auto' }}>
-              {/* Today's Schedule */}
-              {getTodaySchedules().length > 0 && (
-                <div className="watch-card" style={{ padding: '1.3rem 1.4rem', marginBottom: '1rem' }}>
-                  <div style={{ marginBottom: '1rem' }}>
-                    <IonText>
-                      <h3 style={{ margin: 0, fontSize: '1rem', color: '#22c55e' }}>
-                        Today ({getCurrentDay()})
-                      </h3>
-                    </IonText>
-                  </div>
-                  {getTodaySchedules().map((item, index) => (
-                    <div
-                      key={`today-${index}`}
-                      style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        padding: '0.7rem 0',
-                        borderBottom: index < getTodaySchedules().length - 1 ? '1px solid var(--app-border)' : 'none',
-                      }}
-                    >
-                      <div>
-                        <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-primary)' }}>{item.street}</div>
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: '#22c55e' }}>
-                        <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
-                        <span style={{ fontWeight: 600 }}>{item.time}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-
-              {/* All Weekly Schedules */}
-              <div className="watch-card" style={{ padding: '1.3rem 1.4rem' }}>
-                <div style={{ marginBottom: '1rem' }}>
-                  <IonText>
-                      <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--app-text-primary)' }}>Full Weekly Schedule</h3>
-                  </IonText>
-                </div>
-                {(() => {
-                  const today = getCurrentDay();
-                  const todaySchedules = residentSchedules.filter(s => s.day === today);
-                  const otherSchedules = residentSchedules.filter(s => s.day !== today);
-                  
-                  // Combine: today's schedules first, then others
-                  const sortedForDisplay = [...todaySchedules, ...otherSchedules];
-                  
-                  if (sortedForDisplay.length === 0) {
-                    return (
-                      <div style={{ padding: '1rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
-                        No collection schedule available. Please update your barangay in your profile.
-                      </div>
-                    );
-                  }
-                  
-                  return sortedForDisplay.map((item, index) => {
-                    const isToday = item.day === today;
-                    return (
-                      <div
-                        key={`${item.day}-${item.street}-${index}`}
-                        style={{
-                          display: 'flex',
-                          justifyContent: 'space-between',
-                          alignItems: 'center',
-                          padding: '0.7rem 0',
-                          borderBottom: index < sortedForDisplay.length - 1 ? '1px solid var(--app-border)' : 'none',
-                          backgroundColor: isToday ? 'var(--app-surface-elevated)' : 'transparent',
-                          borderRadius: isToday ? '8px' : '0',
-                          paddingLeft: isToday ? '0.75rem' : '0',
-                          paddingRight: isToday ? '0.75rem' : '0',
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: '0.85rem', fontWeight: 600, color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
-                            {item.day} {isToday && '(Today)'}
-                          </div>
-                          <div style={{ fontSize: '0.78rem', color: 'var(--app-text-secondary)' }}>{item.street}</div>
-                        </div>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.8rem', color: isToday ? '#22c55e' : 'var(--app-text-primary)' }}>
-                          <IonIcon icon={timeOutline} style={{ fontSize: '0.9rem' }} />
-                          <span style={{ fontWeight: isToday ? 600 : 400 }}>{item.time}</span>
-                        </div>
-                      </div>
-                    );
-                  });
-                })()}
+              {/* Week Navigation */}
+              <div style={{ 
+                display: 'flex', 
+                justifyContent: 'space-between', 
+                alignItems: 'center',
+                marginBottom: '1.5rem',
+                padding: '1rem',
+                background: 'var(--app-surface)',
+                borderRadius: '12px',
+                border: '1px solid var(--app-border)'
+              }}>
+                <button
+                  type="button"
+                  onClick={() => setCurrentWeekOffset(prev => prev - 1)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--app-border)',
+                    background: 'var(--app-surface-elevated)',
+                    color: 'var(--app-text-primary)',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  <span>‹</span> Previous
+                </button>
+                <span style={{ fontSize: '0.9rem', color: 'var(--app-text-primary)', fontWeight: 600 }}>
+                  {(() => {
+                    const week = getWeekDates(currentWeekOffset);
+                    if (week.length > 0) {
+                      const startDate = week[0].fullDate;
+                      const endDate = week[6].fullDate;
+                      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+                      if (startDate.getMonth() === endDate.getMonth()) {
+                        return `${monthNames[startDate.getMonth()]} ${startDate.getDate()} - ${endDate.getDate()}, ${startDate.getFullYear()}`;
+                      } else {
+                        return `${monthNames[startDate.getMonth()]} ${startDate.getDate()} - ${monthNames[endDate.getMonth()]} ${endDate.getDate()}, ${startDate.getFullYear()}`;
+                      }
+                    }
+                    return 'This Week';
+                  })()}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setCurrentWeekOffset(prev => prev + 1)}
+                  style={{
+                    padding: '0.5rem 1rem',
+                    borderRadius: '8px',
+                    border: '1px solid var(--app-border)',
+                    background: 'var(--app-surface-elevated)',
+                    color: 'var(--app-text-primary)',
+                    cursor: 'pointer',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '0.5rem'
+                  }}
+                >
+                  Next <span>›</span>
+                </button>
               </div>
+
+              {/* All Weekly Schedules Grouped by Day */}
+              {(() => {
+                const schedulesByDay = getSchedulesForWeek(currentWeekOffset);
+                const dayOrder = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                const today = getCurrentDay();
+                
+                if (Object.keys(schedulesByDay).length === 0) {
+                  return (
+                    <div className="watch-card" style={{ padding: '1.5rem', textAlign: 'center', color: 'var(--app-text-secondary)' }}>
+                      No collection schedules available for this week. Please update your barangay in your profile.
+                    </div>
+                  );
+                }
+                
+                return dayOrder.map((dayName) => {
+                  const schedules = schedulesByDay[dayName] || [];
+                  if (schedules.length === 0) return null;
+                  
+                  const isToday = dayName === today;
+                  const week = getWeekDates(currentWeekOffset);
+                  const dayDate = week.find(w => {
+                    const dayIndex = w.fullDate.getDay();
+                    const dayNameFromDate = dayIndex === 0 ? 'Sunday' : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][dayIndex - 1];
+                    return dayNameFromDate === dayName;
+                  });
+                  
+                  return (
+                    <div key={dayName} className="watch-card" style={{ 
+                      padding: '1.3rem 1.4rem', 
+                      marginBottom: '1rem',
+                      border: isToday ? '2px solid #22c55e' : '1px solid var(--app-border)'
+                    }}>
+                      <div style={{ marginBottom: '1rem' }}>
+                        <IonText>
+                          <h3 style={{ 
+                            margin: 0, 
+                            fontSize: '1rem', 
+                            color: isToday ? '#22c55e' : 'var(--app-text-primary)',
+                            fontWeight: 600
+                          }}>
+                            {dayName} {isToday && '(Today)'}
+                            {dayDate && (
+                              <span style={{ fontSize: '0.85rem', color: 'var(--app-text-secondary)', fontWeight: 400, marginLeft: '0.5rem' }}>
+                                - {dayDate.fullDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                              </span>
+                            )}
+                          </h3>
+                        </IonText>
+                      </div>
+                      {schedules.map((item, index) => {
+                        const status = getScheduleStatus(item, dayDate?.fullDate || new Date());
+                        const statusColors: { [key: string]: string } = {
+                          'pending': '#f59e0b',
+                          'done': '#10b981',
+                          'skipped': '#ef4444',
+                          'in-progress': '#3b82f6'
+                        };
+                        const statusLabels: { [key: string]: string } = {
+                          'pending': 'pending',
+                          'done': 'done',
+                          'skipped': 'skipped',
+                          'in-progress': 'in progress'
+                        };
+                        
+                        return (
+                          <div
+                            key={`${dayName}-${item.street}-${index}`}
+                            style={{
+                              display: 'flex',
+                              justifyContent: 'space-between',
+                              alignItems: 'center',
+                              padding: '0.7rem 0',
+                              borderBottom: index < schedules.length - 1 ? '1px solid var(--app-border)' : 'none',
+                              backgroundColor: isToday ? 'rgba(34, 197, 94, 0.05)' : 'transparent',
+                              borderRadius: isToday ? '8px' : '0',
+                              paddingLeft: isToday ? '0.75rem' : '0',
+                              paddingRight: isToday ? '0.75rem' : '0',
+                            }}
+                          >
+                            <div style={{ flex: 1 }}>
+                              <div style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--app-text-primary)', marginBottom: '0.25rem' }}>
+                                {Array.isArray(item.street) ? item.street[0] : item.street}
+                              </div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                <span style={{ fontSize: '0.75rem', color: 'var(--app-text-secondary)' }}>
+                                  ⏰ {item.time}
+                                </span>
+                                <span style={{ 
+                                  fontSize: '0.75rem', 
+                                  padding: '0.2rem 0.5rem',
+                                  borderRadius: '12px',
+                                  background: statusColors[status] || '#6b7280',
+                                  color: 'white',
+                                  display: 'flex',
+                                  alignItems: 'center',
+                                  gap: '0.25rem'
+                                }}>
+                                  {statusLabels[status] || status}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }).filter(Boolean);
+              })()}
             </div>
           </div>
         </IonContent>
@@ -1460,6 +2004,16 @@ const Home: React.FC = () => {
           </div>
         </IonContent>
       </IonModal>
+
+      {/* Toast notification for authentication required */}
+      <IonToast
+        isOpen={showToast}
+        onDidDismiss={() => setShowToast(false)}
+        message={toastMessage}
+        duration={3000}
+        position="top"
+        color="warning"
+      />
     </IonPage>
   );
 };

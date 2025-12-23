@@ -2,7 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { IonPage, IonHeader, IonToolbar, IonTitle, IonContent, IonButton, IonButtons, IonIcon, IonText, IonToast } from '@ionic/react';
-import { arrowBackOutline, busOutline } from 'ionicons/icons';
+import { arrowBackOutline, busOutline, searchOutline, locationOutline, timeOutline, calendarOutline } from 'ionicons/icons';
 import { useHistory, useLocation } from 'react-router-dom';
 import * as L from 'leaflet';
 import MapView from '../../components/MapView';
@@ -12,6 +12,7 @@ import RefreshButton from '../../components/RefreshButton';
 import ThemeToggle from '../../components/ThemeToggle';
 import { calculateDistance, isValidCoordinate } from '../../utils/coordinates';
 import { getCurrentUserId } from '../../utils/auth';
+import useCurrentUser from '../../state/useCurrentUser';
 import { requestGeolocation } from '../../utils/geolocation';
 import {
   initializeResidentNotifications,
@@ -19,13 +20,16 @@ import {
   checkReportStatusChanges,
   resetTruckNotifications,
 } from '../../services/residentNotificationService';
+import { supabase } from '../../services/supabase';
 
 const ResidentTruckView: React.FC = () => {
   const history = useHistory();
   const location = useLocation();
+  const { user } = useCurrentUser();
   const mapRef = useRef<L.Map | null>(null);
   const truckMarkersRef = useRef<Map<string, L.Marker>>(new Map());
   const residentMarkerRef = useRef<L.Marker | null>(null); // Reference to resident location marker
+  const routePolylinesRef = useRef<Map<string, L.Polyline>>(new Map()); // Reference to route polylines
   const updateIntervalRef = useRef<number | null>(null);
   const previousTruckStatusesRef = useRef<Map<string, { isCollecting: boolean; isFull: boolean }>>(new Map());
   const initialLoadCompleteRef = useRef<boolean>(false); // Track if initial load is complete
@@ -34,6 +38,26 @@ const ResidentTruckView: React.FC = () => {
   // Toast state for notifications
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
+  
+  // Map and data state
+  const [schedules, setSchedules] = useState<any[]>([]);
+  const [todaySchedules, setTodaySchedules] = useState<any[]>([]); // Only routes scheduled for today
+  const [collectors, setCollectors] = useState<any[]>([]);
+  const [collectionStatuses, setCollectionStatuses] = useState<any[]>([]);
+  const [selectedItem, setSelectedItem] = useState<{ type: 'route', id: string } | null>(null);
+
+  // Handle report button click with authentication check
+  const handleReportClick = (truckNo: string) => {
+    if (!user) {
+      setToastMessage('You must log in first before accessing this feature.');
+      setShowToast(true);
+      return;
+    }
+    history.push({
+      pathname: '/resident/report',
+      state: { truckNo: truckNo }
+    });
+  };
   
   // Resident location and proximity tracking
   const residentLocationRef = useRef<{ lat: number; lng: number } | null>(null);
@@ -327,10 +351,7 @@ const ResidentTruckView: React.FC = () => {
                 const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
                 if (reportBtn) {
                   reportBtn.onclick = () => {
-                    history.push({
-                      pathname: '/resident/report',
-                      state: { truckNo: collector.truckNo }
-                    });
+                    handleReportClick(collector.truckNo || '');
                   };
                 }
                 
@@ -365,16 +386,63 @@ const ResidentTruckView: React.FC = () => {
             }
           }
           
-          // Fit map bounds to show all trucks (only if we have trucks with GPS)
-          if (truckPositions.length > 0 && mapRef.current) {
-            if (truckPositions.length === 1) {
-              mapRef.current.setView(truckPositions[0], 16);
-            } else {
-              mapRef.current.fitBounds(L.latLngBounds(truckPositions), { padding: [50, 50] });
+          // Load and draw routes on map
+          try {
+            const { data: schedulesData } = await supabase
+              .from('collection_schedules')
+              .select('*');
+            
+            if (schedulesData && mapRef.current) {
+              drawRoutesOnMap(schedulesData);
             }
-          } else if (mapRef.current && residentLocationRef.current) {
-            // Center on resident location if no trucks are visible
-            mapRef.current.setView([residentLocationRef.current.lat, residentLocationRef.current.lng], 16);
+          } catch (error) {
+            console.error('Error loading routes for map:', error);
+          }
+          
+          // Focus map on routes instead of trucks or resident location
+          if (mapRef.current) {
+            // Get all route bounds
+            const allRouteBounds: L.LatLngBounds | null = null;
+            let hasRoutes = false;
+            
+            // Try to fit bounds to all routes
+            const routePoints: L.LatLngExpression[] = [];
+            try {
+              const { data: schedulesData } = await supabase
+                .from('collection_schedules')
+                .select('latitude, longitude');
+              
+              if (schedulesData) {
+                schedulesData.forEach((schedule: any) => {
+                  const lats = Array.isArray(schedule.latitude) ? schedule.latitude : (schedule.latitude ? [schedule.latitude] : []);
+                  const lngs = Array.isArray(schedule.longitude) ? schedule.longitude : (schedule.longitude ? [schedule.longitude] : []);
+                  
+                  for (let i = 0; i < Math.max(lats.length, lngs.length); i++) {
+                    if (lats[i] !== undefined && lngs[i] !== undefined && !isNaN(lats[i]) && !isNaN(lngs[i])) {
+                      routePoints.push([lats[i], lngs[i]]);
+                      hasRoutes = true;
+                    }
+                  }
+                });
+              }
+            } catch (error) {
+              console.error('Error getting route bounds:', error);
+            }
+            
+            if (hasRoutes && routePoints.length > 0) {
+              const bounds = L.latLngBounds(routePoints);
+              mapRef.current.fitBounds(bounds, { padding: [50, 50] });
+            } else if (truckPositions.length > 0) {
+              // Fallback to trucks if no routes
+              if (truckPositions.length === 1) {
+                mapRef.current.setView(truckPositions[0], 16);
+              } else {
+                mapRef.current.fitBounds(L.latLngBounds(truckPositions), { padding: [50, 50] });
+              }
+            } else {
+              // Default location if nothing is available
+              mapRef.current.setView([14.5995, 120.9842], 13); // Default to Manila area
+            }
           }
           
           // Mark initial load as complete
@@ -388,108 +456,361 @@ const ResidentTruckView: React.FC = () => {
 
       loadAllTrucks();
 
-      // Get and track resident location for proximity notifications
-      if (navigator.geolocation) {
-        navigator.geolocation.getCurrentPosition(
-          (pos) => {
-            if (!mapRef.current) return;
-            const userLat = pos.coords.latitude;
-            const userLng = pos.coords.longitude;
-            
-            if (isValidCoordinate(userLat, userLng)) {
-              // Store resident location for proximity checks
-              residentLocationRef.current = { lat: userLat, lng: userLng };
-              console.log('Resident location set for proximity checks:', userLat, userLng);
-              
-              const userLatLng: L.LatLngExpression = [userLat, userLng];
-              
-              // Remove existing resident marker if it exists
-              if (residentMarkerRef.current && mapRef.current) {
-                mapRef.current.removeLayer(residentMarkerRef.current);
-                residentMarkerRef.current = null;
-              }
-              
-              // Add user location marker with people icon - user's own location
-              const peopleIcon = createPeopleIcon();
-              const residentMarker = L.marker(userLatLng, { icon: peopleIcon })
-                .bindPopup('Your Location')
-                .addTo(mapRef.current);
-              residentMarkerRef.current = residentMarker;
-              
-              // Check proximity for all existing trucks now that we have resident location
-              const userId = getCurrentUserId();
-              if (userId) {
-                truckMarkersRef.current.forEach((marker, truckNo) => {
-                  const latlng = marker.getLatLng();
-                  // Get collector info for the truck
-                  databaseService.getAccountsByRole('collector').then(collectors => {
-                    const collector = collectors.find(c => c.truckNo === truckNo);
-                    if (collector && residentLocationRef.current) {
-                      checkTruckProximity(
-                        userId,
-                        residentLocationRef.current.lat,
-                        residentLocationRef.current.lng,
-                        truckNo,
-                        latlng.lat,
-                        latlng.lng,
-                        collector.name || 'Collector'
-                      );
-                    }
-                  }).catch(err => console.error('Error checking proximity:', err));
-                });
-              }
-            }
-          },
-          () => {
-            // Silently fail if user location can't be obtained
-            console.log('User location not available');
-          },
-          { enableHighAccuracy: true, timeout: 5000 },
-        );
-        
-        // Also set up watchPosition to update resident location as they move
-        let watchId: number | null = null;
-        if (navigator.geolocation.watchPosition) {
-          watchId = navigator.geolocation.watchPosition(
-            (pos) => {
-              const userLat = pos.coords.latitude;
-              const userLng = pos.coords.longitude;
-              
-              if (isValidCoordinate(userLat, userLng)) {
-                residentLocationRef.current = { lat: userLat, lng: userLng };
-                console.log('Resident location updated:', userLat, userLng);
-                
-                // Update resident marker position if it exists
-                if (residentMarkerRef.current && mapRef.current) {
-                  residentMarkerRef.current.setLatLng([userLat, userLng]);
-                } else if (mapRef.current) {
-                  // Create marker if it doesn't exist
-                  const userLatLng: L.LatLngExpression = [userLat, userLng];
-                  const peopleIcon = createPeopleIcon();
-                  const residentMarker = L.marker(userLatLng, { icon: peopleIcon })
-                    .bindPopup('Your Location')
-                    .addTo(mapRef.current);
-                  residentMarkerRef.current = residentMarker;
-                }
-              }
-            },
-            (error) => {
-              console.error('Error watching resident location:', error);
-            },
-            { enableHighAccuracy: true, timeout: 10000, maximumAge: 5000 }
-          );
-        }
-        
-        // Store watchId for cleanup (if needed in future)
-        return () => {
-          if (watchId !== null && navigator.geolocation) {
-            navigator.geolocation.clearWatch(watchId);
-          }
-        };
-      }
+      // Do not detect GPS location - focus on routes instead
     }, 300);
   };
 
+  // Helper function to get route status for a specific date - updated to use new collection_status schema
+  const getRouteStatusForSchedule = (schedule: any, checkDate?: Date): { status: 'today' | 'done' | 'skipped' | 'scheduled' | 'completed' | 'missed'; color: string; displayStatus: string } => {
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+    const dateToCheck = checkDate || new Date();
+    const dateStr = dateToCheck.toISOString().split('T')[0];
+    const todayDate = new Date().toISOString().split('T')[0];
+    const dayAbbr = dateToCheck.toLocaleDateString('en-US', { weekday: 'short' });
+    const isScheduledToday = schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr);
+    const isToday = dateStr === todayDate;
+
+    const barangayName = Array.isArray(schedule.barangay_name) 
+      ? schedule.barangay_name[0] 
+      : schedule.barangay_name || '';
+    const streetName = Array.isArray(schedule.street_name) 
+      ? schedule.street_name[0] 
+      : schedule.street_name || '';
+
+    // Check collection status using updated schema (scheduleId + streetName + collectionDate)
+    const collectionStatus = collectionStatuses.find(cs => {
+      const matchesSchedule = cs.scheduleId === schedule.id;
+      const matchesDate = cs.collectionDate === dateStr;
+      const matchesStreet = cs.streetName === streetName || 
+                           (cs.streetId && schedule.street_ids && Array.isArray(schedule.street_ids) && 
+                            schedule.street_ids.includes(cs.streetId));
+      const matchesBarangay = cs.barangayName === barangayName;
+      return matchesSchedule && matchesDate && matchesStreet && matchesBarangay;
+    });
+
+    if (collectionStatus) {
+      if (collectionStatus.status === 'collected') {
+        return { status: 'done', color: '#10b981', displayStatus: 'completed' }; // Green
+      } else if (collectionStatus.status === 'skipped') {
+        return { status: 'skipped', color: '#f59e0b', displayStatus: 'skipped' }; // Orange
+      } else if (collectionStatus.status === 'missed') {
+        return { status: 'missed', color: '#ef4444', displayStatus: 'skipped' }; // Red (display as skipped)
+      } else {
+        return { status: 'completed', color: '#3b82f6', displayStatus: 'in-progress' }; // Blue (pending/in-progress)
+      }
+    } else if (isScheduledToday && isToday) {
+      return { status: 'today', color: '#16a34a', displayStatus: 'Scheduled Today' }; // Green (scheduled for today)
+    } else if (isScheduledToday) {
+      return { status: 'scheduled', color: '#6b7280', displayStatus: 'Scheduled' }; // Gray (scheduled for this day but not today)
+    } else {
+      return { status: 'scheduled', color: '#6b7280', displayStatus: 'Scheduled' }; // Gray (not scheduled for this day)
+    }
+  };
+
+  // Mark past incomplete/skipped routes as missed
+  const markPastIncompleteRoutesAsMissed = async (schedules: any[], collectors: any[]) => {
+    try {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayDate = today.toISOString().split('T')[0];
+
+      // Get all past dates up to 30 days ago
+      const pastDates: string[] = [];
+      for (let i = 1; i <= 30; i++) {
+        const pastDate = new Date(today);
+        pastDate.setDate(pastDate.getDate() - i);
+        pastDates.push(pastDate.toISOString().split('T')[0]);
+      }
+
+      // Get all collection statuses for past dates
+      const { data: pastStatuses } = await supabase
+        .from('collection_status')
+        .select('*')
+        .in('collectionDate', pastDates);
+
+      // For each schedule, check if it was scheduled in the past and not completed/skipped
+      for (const schedule of schedules) {
+        const barangayName = Array.isArray(schedule.barangay_name) 
+          ? schedule.barangay_name[0] 
+          : schedule.barangay_name || '';
+        const streetName = Array.isArray(schedule.street_name) 
+          ? schedule.street_name[0] 
+          : schedule.street_name || '';
+
+        if (!streetName && !barangayName) continue;
+
+        // Check each past date
+        for (const pastDate of pastDates) {
+          const pastDateObj = new Date(pastDate);
+          const dayAbbr = pastDateObj.toLocaleDateString('en-US', { weekday: 'short' });
+          
+          // Check if schedule was supposed to run on this day
+          if (!schedule.days || !Array.isArray(schedule.days) || !schedule.days.includes(dayAbbr)) {
+            continue; // Not scheduled for this day
+          }
+
+          // Check if there's already a status for this date
+          const existingStatus = pastStatuses?.find(ps => 
+            ps.scheduleId === schedule.id &&
+            ps.collectionDate === pastDate &&
+            (ps.streetName === streetName || 
+             (ps.streetId && schedule.street_ids && Array.isArray(schedule.street_ids) && 
+              schedule.street_ids.includes(ps.streetId))) &&
+            ps.barangayName === barangayName
+          );
+
+          // If no status or status is pending (not collected/skipped), mark as missed
+          if (!existingStatus || (existingStatus.status !== 'collected' && existingStatus.status !== 'skipped')) {
+            const collector = collectors.find(c => c.id === schedule.collector_id);
+            const userId = collector?.id || getCurrentUserId() || '';
+            const streetId = Array.isArray(schedule.street_id) ? schedule.street_id[0] : schedule.street_id || null;
+
+            if (existingStatus) {
+              // Update existing pending status to missed
+              await supabase
+                .from('collection_status')
+                .update({
+                  status: 'missed',
+                  markedAt: new Date().toISOString(),
+                  markedBy: userId,
+                  updatedAt: new Date().toISOString()
+                })
+                .eq('id', existingStatus.id);
+            } else {
+              // Insert new missed status
+              await supabase
+                .from('collection_status')
+                .insert({
+                  id: `${userId}-${schedule.id}-${streetName}-${pastDate}-${Date.now()}-missed`,
+                  scheduleId: schedule.id,
+                  collectorId: userId,
+                  streetName: streetName,
+                  streetId: streetId,
+                  barangayName: barangayName,
+                  collectionDate: pastDate,
+                  status: 'missed',
+                  markedAt: new Date().toISOString(),
+                  markedBy: userId,
+                  updatedAt: new Date().toISOString()
+                });
+            }
+          }
+        }
+      }
+
+      // Reload collection statuses after marking missed
+      const { data: updatedStatuses } = await supabase
+        .from('collection_status')
+        .select('*')
+        .gte('collectionDate', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]);
+
+      if (updatedStatuses) {
+        const mappedStatuses = updatedStatuses.map((status: any) => ({
+          id: status.id,
+          scheduleId: status.scheduleId || status.schedule_id,
+          collectorId: status.collectorId || status.collector_id,
+          streetName: status.streetName || status.street_name || status.street || '',
+          streetId: status.streetId || status.street_id || null,
+          barangayName: status.barangayName || status.barangay_name || status.barangay || '',
+          status: status.status || 'pending',
+          collectionDate: status.collectionDate || status.collection_date,
+          updatedAt: status.updatedAt || status.updated_at
+        }));
+        setCollectionStatuses(mappedStatuses);
+      }
+    } catch (error) {
+      console.error('Error marking past incomplete routes as missed:', error);
+    }
+  };
+
+  // Function to draw routes on map
+  const drawRoutesOnMap = (schedulesData: any[]) => {
+    if (!mapRef.current) return;
+
+    // Clear existing route polylines
+    routePolylinesRef.current.forEach(polyline => {
+      if (mapRef.current) {
+        mapRef.current.removeLayer(polyline);
+      }
+    });
+    routePolylinesRef.current.clear();
+
+    const today = new Date().toLocaleDateString('en-US', { weekday: 'short' });
+    const todayDate = new Date().toISOString().split('T')[0];
+
+    schedulesData.forEach((schedule) => {
+      // Handle both array and single value formats
+      let routeLatitudes: number[] = [];
+      let routeLongitudes: number[] = [];
+      
+      if (Array.isArray(schedule.latitude)) {
+        routeLatitudes = schedule.latitude;
+      } else if (schedule.latitude !== undefined && schedule.latitude !== null) {
+        routeLatitudes = [schedule.latitude];
+      }
+      
+      if (Array.isArray(schedule.longitude)) {
+        routeLongitudes = schedule.longitude;
+      } else if (schedule.longitude !== undefined && schedule.longitude !== null) {
+        routeLongitudes = [schedule.longitude];
+      }
+      
+      // Determine route status and color using same logic as admin dashboard
+      const routeStatusObj = getRouteStatusForSchedule(schedule);
+      const routeColor = routeStatusObj.color;
+      
+      if (routeLatitudes.length > 0 && routeLongitudes.length > 0) {
+        const routePoints: L.LatLngExpression[] = [];
+        const maxLength = Math.max(routeLatitudes.length, routeLongitudes.length);
+        
+        for (let i = 0; i < maxLength; i++) {
+          const lat = routeLatitudes[i];
+          const lng = routeLongitudes[i];
+          if (lat !== undefined && lng !== undefined && lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
+            routePoints.push([lat, lng]);
+          }
+        }
+
+        if (routePoints.length > 1) {
+          const collector = collectors.find(c => c.id === schedule.collector_id);
+          const barangayName = Array.isArray(schedule.barangay_name) 
+            ? schedule.barangay_name[0] 
+            : schedule.barangay_name || 'Unknown';
+          const streetName = Array.isArray(schedule.street_name) 
+            ? schedule.street_name.join(', ') 
+            : schedule.street_name || '';
+          
+          const polyline = L.polyline(routePoints, {
+            color: routeColor,
+            weight: 5,
+            opacity: 0.8,
+          });
+          if (mapRef.current) {
+            polyline.addTo(mapRef.current);
+          }
+
+          const popupContent = `
+            <div style="padding: 0.5rem;">
+              <strong>${barangayName}${streetName ? ` - ${streetName}` : ''}</strong><br/>
+              <small>${collector?.name || 'Unknown'} • ${schedule.truck_no || collector?.truckNo || 'N/A'}</small><br/>
+              <small>Time: ${schedule.collection_time || '08:00'}</small><br/>
+              <small>Days: ${schedule.days?.join(', ') || 'N/A'}</small>
+            </div>
+          `;
+          polyline.bindPopup(popupContent);
+          
+          routePolylinesRef.current.set(schedule.id, polyline);
+        }
+      }
+    });
+  };
+
+  // Check today's schedule and notify if needed
+  const checkTodayScheduleAndNotify = async (userId: string) => {
+    try {
+      await databaseService.init();
+      const account = await databaseService.getAccountById(userId);
+      if (!account?.barangay) return;
+
+      const today = new Date();
+      const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+      
+      const { data: todaySchedules } = await supabase
+        .from('collection_schedules')
+        .select('*');
+      
+      const relevantSchedules = todaySchedules?.filter((s: any) => {
+        const barangayName = Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name;
+        return s.days.includes(dayAbbr) && barangayName === account.barangay;
+      }) || [];
+
+      if (relevantSchedules.length > 0) {
+        const scheduleList = relevantSchedules.map((s: any) => {
+          const streetName = Array.isArray(s.street_name) ? s.street_name[0] : s.street_name;
+          return streetName || 'Collection Route';
+        }).join(', ');
+
+        await databaseService.createNotification({
+          userId,
+          title: '📅 Today\'s Collection Schedule',
+          message: `Collection scheduled for today: ${scheduleList}. Time: ${relevantSchedules[0].collection_time || '08:00'}`,
+          type: 'info',
+          read: false,
+          link: '/resident/truck',
+        });
+      }
+    } catch (error) {
+      console.error('Error checking today schedule:', error);
+    }
+  };
+
+  // Update todaySchedules whenever schedules change - but we'll show all schedules in weekly view
+  useEffect(() => {
+    // For now, we'll use all schedules for the weekly view
+    // The filtering will be done in the UI based on selected day
+    setTodaySchedules(schedules);
+  }, [schedules]);
+
+  // Load schedules and collection statuses - using same approach as admin dashboard
+  useEffect(() => {
+    const loadSchedulesData = async () => {
+      try {
+        await databaseService.init();
+        const userId = getCurrentUserId();
+        if (!userId) return;
+        
+        const account = await databaseService.getAccountById(userId);
+        if (!account?.barangay) return;
+
+        // Load all data in parallel - same as admin dashboard
+        const [schedulesData, collectorsData, collectionStatusData] = await Promise.all([
+          supabase.from('collection_schedules').select('*').order('created_at', { ascending: false }),
+          databaseService.getAccountsByRole('collector'),
+          supabase.from('collection_status').select('*').gte('collectionDate', new Date().toISOString().split('T')[0])
+        ]);
+
+        // Filter schedules by barangay (resident-specific)
+        let filteredSchedules: any[] = [];
+        if (schedulesData.data) {
+          filteredSchedules = schedulesData.data.filter((s: any) => {
+            const barangayName = Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name;
+            return barangayName === account.barangay;
+          });
+          setSchedules(filteredSchedules);
+        }
+
+        // Set collectors
+        setCollectors(collectorsData);
+
+        // Map collection statuses - updated to use new schema
+        if (collectionStatusData.data) {
+          const mappedStatuses = collectionStatusData.data.map((status: any) => ({
+            id: status.id,
+            scheduleId: status.scheduleId || status.schedule_id,
+            collectorId: status.collectorId || status.collector_id,
+            streetName: status.streetName || status.street_name || status.street || '',
+            streetId: status.streetId || status.street_id || null,
+            barangayName: status.barangayName || status.barangay_name || status.barangay || '',
+            status: status.status || 'pending',
+            collectionDate: status.collectionDate || status.collection_date,
+            updatedAt: status.updatedAt || status.updated_at
+          }));
+          setCollectionStatuses(mappedStatuses);
+        }
+
+        // Mark past incomplete/skipped routes as missed
+        await markPastIncompleteRoutesAsMissed(filteredSchedules, collectorsData);
+      } catch (error) {
+        console.error('Error loading schedules data:', error);
+      }
+    };
+
+    loadSchedulesData();
+    
+    // Reload every 30 seconds to keep data fresh - same as admin dashboard
+    const interval = setInterval(loadSchedulesData, 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Initialize resident notifications on mount
   useEffect(() => {
@@ -497,6 +818,8 @@ const ResidentTruckView: React.FC = () => {
       const userId = getCurrentUserId();
       if (userId) {
         await initializeResidentNotifications(userId);
+        // Check for today's schedule and send notification if needed
+        await checkTodayScheduleAndNotify(userId);
       }
     };
     initNotifications();
@@ -603,13 +926,13 @@ const ResidentTruckView: React.FC = () => {
               // Collector is online if: logged in AND updated recently (< 5 min)
               const isOnline = isLoggedIn && timeSinceUpdate < OFFLINE_THRESHOLD_MS;
               
-              // Use actual GPS coordinates only (no default location)
+              // Use actual GPS coordinates from truck_status table (not resident GPS)
               // Only update if collector is online and has valid GPS
               if (isOnline && status.latitude !== undefined && status.longitude !== undefined && 
                   isValidCoordinate(status.latitude, status.longitude)) {
-                // Collector is online - use actual GPS coordinates
-                const truckLat = status.latitude;
-                const truckLng = status.longitude;
+                // Use GPS from truck_status table (truck's own GPS)
+                const truckLat = status.latitude; // From truck_status table
+                const truckLng = status.longitude; // From truck_status table
                 
                 // Update marker position
                 marker.setLatLng([truckLat, truckLng]);
@@ -648,10 +971,7 @@ const ResidentTruckView: React.FC = () => {
                   const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
                   if (reportBtn) {
                     reportBtn.onclick = () => {
-                      history.push({
-                        pathname: '/resident/report',
-                        state: { truckNo: collector.truckNo }
-                      });
+                      handleReportClick(collector.truckNo || '');
                     };
                   }
                   
@@ -725,10 +1045,7 @@ const ResidentTruckView: React.FC = () => {
                 const reportBtn = document.getElementById(`truck-report-btn-${collector.truckNo}`);
                 if (reportBtn) {
                   reportBtn.onclick = () => {
-                    history.push({
-                      pathname: '/resident/report',
-                      state: { truckNo: collector.truckNo }
-                    });
+                    handleReportClick(collector.truckNo || '');
                   };
                 }
                 
@@ -771,7 +1088,21 @@ const ResidentTruckView: React.FC = () => {
       updateTruckStatuses(); // Start updates after initial load
     }, 2000); // Wait 2 seconds for initial load to complete
     
-    const statusInterval = setInterval(updateTruckStatuses, 3000); // Check every 3 seconds for faster updates
+    const statusInterval = setInterval(async () => {
+      await updateTruckStatuses();
+      // Update today's schedules based on current date
+      try {
+        const today = new Date();
+        const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+        setTodaySchedules(prevSchedules => {
+          return schedules.filter(s => {
+            return s.days && Array.isArray(s.days) && s.days.includes(dayAbbr);
+          });
+        });
+      } catch (error) {
+        console.error('Error updating today schedules:', error);
+      }
+    }, 3000); // Check every 3 seconds for faster updates
 
     return () => {
       clearTimeout(startDelay);
@@ -861,10 +1192,12 @@ const ResidentTruckView: React.FC = () => {
               right: 0,
               bottom: 0,
               borderRadius: 0,
+              transition: 'bottom 0.3s ease',
             }}
           >
             <AnyMapView id="resident-truck-map" center={[14.683726, 121.076224]} zoom={16} onMapReady={handleMapReady} />
           </div>
+
         </div>
       </IonContent>
 

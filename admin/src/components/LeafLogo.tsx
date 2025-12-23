@@ -1,4 +1,4 @@
-// Leaf Logo Component for W.A.T.C.H.
+// Logo Component for W.A.T.C.H. - Circular Green Icon with Truck
 import './LeafLogo.css';
 
 interface LeafLogoProps {
@@ -20,28 +20,27 @@ export default function LeafLogo({ size = 'medium', className = '' }: LeafLogoPr
         fill="none"
         xmlns="http://www.w3.org/2000/svg"
       >
-        {/* Leaf Shape */}
-        <path
-          d="M50 20 C30 20, 15 35, 15 50 C15 65, 25 75, 35 80 C40 85, 45 88, 50 90 C55 88, 60 85, 65 80 C75 75, 85 65, 85 50 C85 35, 70 20, 50 20 Z"
-          fill="url(#leafGradient)"
-          stroke="#15803d"
-          strokeWidth="2"
+        {/* Circular Background */}
+        <circle
+          cx="50"
+          cy="50"
+          r="45"
+          fill="#16a34a"
         />
-        {/* Leaf Veins */}
-        <path
-          d="M50 20 L50 90 M35 50 L50 20 L65 50 M25 60 L50 20 L75 60"
-          stroke="#065f46"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          opacity="0.4"
-        />
-        <defs>
-          <linearGradient id="leafGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stopColor="#22c55e" />
-            <stop offset="50%" stopColor="#16a34a" />
-            <stop offset="100%" stopColor="#15803d" />
-          </linearGradient>
-        </defs>
+        {/* Truck Icon */}
+        <g transform="translate(50, 50)">
+          {/* Truck Body */}
+          <rect x="-25" y="-8" width="30" height="16" rx="2" fill="white" />
+          {/* Truck Cabin */}
+          <rect x="5" y="-12" width="15" height="20" rx="2" fill="white" />
+          {/* Window */}
+          <rect x="7" y="-10" width="11" height="8" rx="1" fill="#16a34a" />
+          {/* Wheels */}
+          <circle cx="-10" cy="8" r="6" fill="#16a34a" />
+          <circle cx="15" cy="8" r="6" fill="#16a34a" />
+          <circle cx="-10" cy="8" r="3" fill="white" />
+          <circle cx="15" cy="8" r="3" fill="white" />
+        </g>
       </svg>
     </div>
   );

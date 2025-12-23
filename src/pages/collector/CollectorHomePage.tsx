@@ -50,6 +50,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   const [truckNo, setTruckNo] = useState('BCG 11*4');
   const [showSchedulePanel, setShowSchedulePanel] = useState(false);
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null); // Track actual date for navigation
   const [schedules, setSchedules] = useState<any[]>([]);
   const [selectedSchedule, setSelectedSchedule] = useState<any | null>(null);
   const [flagMarker, setFlagMarker] = useState<L.Marker | null>(null);
@@ -216,8 +217,9 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         );
         
         if (todaySchedules.length > 0) {
-          // Auto-select today's schedule
-          handleDayClick(today).catch(err => console.error('Error auto-loading today schedule:', err));
+          // Auto-select today's schedule with today's date
+          const todayDate = new Date();
+          handleDayClick(today, todayDate).catch(err => console.error('Error auto-loading today schedule:', err));
         }
       }
     }
@@ -493,6 +495,62 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
     return daysOfWeek[tomorrowIndex];
   };
 
+  // Get previous day name
+  const getPreviousDay = (): string | null => {
+    const today = getTodayDay();
+    const todayIndex = daysOfWeek.indexOf(today);
+    
+    if (todayIndex === -1) return null; // Today not found in daysOfWeek
+    
+    // Get previous day in the week
+    const previousIndex = todayIndex === 0 ? daysOfWeek.length - 1 : todayIndex - 1;
+    return daysOfWeek[previousIndex];
+  };
+
+  // Get previous date with scheduled routes
+  const getPreviousScheduledDate = (): Date | null => {
+    if (!selectedDate) return null;
+    
+    const currentDate = new Date(selectedDate);
+    for (let i = 1; i <= 14; i++) { // Check up to 2 weeks back
+      currentDate.setDate(currentDate.getDate() - 1);
+      const dayName = daysOfWeek[currentDate.getDay() === 0 ? 6 : currentDate.getDay() - 1];
+      const dayAbbr = dayAbbreviations[dayName];
+      
+      if (schedules.some(schedule => 
+        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+      )) {
+        return new Date(currentDate);
+      }
+    }
+    return null;
+  };
+
+  // Get next date with scheduled routes
+  const getNextScheduledDate = (): Date | null => {
+    if (!selectedDate) return null;
+    
+    const currentDate = new Date(selectedDate);
+    for (let i = 1; i <= 14; i++) { // Check up to 2 weeks ahead
+      currentDate.setDate(currentDate.getDate() + 1);
+      const dayName = daysOfWeek[currentDate.getDay() === 0 ? 6 : currentDate.getDay() - 1];
+      const dayAbbr = dayAbbreviations[dayName];
+      
+      if (schedules.some(schedule => 
+        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+      )) {
+        return new Date(currentDate);
+      }
+    }
+    return null;
+  };
+
+  // Format date for display
+  const formatDateForDisplay = (date: Date): string => {
+    const dayName = daysOfWeek[date.getDay() === 0 ? 6 : date.getDay() - 1];
+    return dayName;
+  };
+
   // Extract all locations from a schedule (handles arrays and route polylines)
   const extractLocationsFromSchedule = (schedule: any): Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}> => {
     const locations: Array<{street: string; barangay: string; lat: number; lng: number; scheduleId: string; locationIndex: number; streetId?: string; routeCoordinates?: [number, number][]}> = [];
@@ -593,7 +651,7 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
   };
 
   // Handle day selection - show all locations for that day below Start Collecting button
-  const handleDayClick = async (day: string) => {
+  const handleDayClick = async (day: string, date?: Date) => {
     try {
       await databaseService.init();
       
@@ -609,6 +667,25 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
         // Clear previous selected schedule
         setSelectedSchedule(null);
         setSelectedDay(day);
+        if (date) {
+          setSelectedDate(date);
+        } else {
+          // If no date provided, use today if it's today's day, otherwise find next occurrence
+          const today = new Date();
+          const todayDay = getTodayDay();
+          if (day === todayDay) {
+            setSelectedDate(today);
+          } else {
+            // Find next occurrence of this day
+            const nextDate = new Date(today);
+            const targetDayIndex = daysOfWeek.indexOf(day);
+            const currentDayIndex = today.getDay() === 0 ? 6 : today.getDay() - 1;
+            let daysToAdd = targetDayIndex - currentDayIndex;
+            if (daysToAdd <= 0) daysToAdd += 7;
+            nextDate.setDate(today.getDate() + daysToAdd);
+            setSelectedDate(nextDate);
+          }
+        }
         setViewingDay(day);
         
         // Extract all locations from all schedules for this day
@@ -1483,11 +1560,36 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                       // Pass selected day and locations so route page can place flags
                       onStartCollecting(undefined, selectedDay, continueLocations);
                   } else {
-                    // Start collecting - show location prompt first
-                      // Only proceed if a day is selected
-                      if (!selectedDay) {
+                    // Start collecting - automatically show today's routes if no day selected
+                    if (!selectedDay) {
+                      const today = getTodayDay();
+                      const dayAbbr = dayAbbreviations[today];
+                      const isTodayScheduled = schedules.some(schedule => 
+                        schedule.days && Array.isArray(schedule.days) && schedule.days.includes(dayAbbr)
+                      );
+                      
+                      if (isTodayScheduled) {
+                        // Auto-select today's schedule
+                        handleDayClick(today).then(() => {
+                          // After selecting today, proceed with collection
+                          const todayLocations = tempStorage.get(today) || [];
+                          if (todayLocations.length > 0) {
+                            setTimeout(() => {
+                              autoPlaceFlagsForSelectedDay();
+                            }, 200);
+                          }
+                          setShowLocationPrompt(true);
+                        }).catch(err => {
+                          console.error('Error auto-loading today schedule:', err);
+                          setShowLocationPrompt(true);
+                        });
+                        return;
+                      } else {
+                        // No schedule for today, show prompt anyway
+                        setShowLocationPrompt(true);
                         return;
                       }
+                    }
                       
                       // Clear the stopped collecting flag when starting
                       if (onClearStoppedFlag) {
@@ -1556,46 +1658,90 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 {truckIsFull ? 'Continue Collecting' : 'Start Collecting'}
               </button>
 
-              <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', marginLeft: 'auto' }}>
-                {/* Next Day Button - show if viewing today and tomorrow exists */}
-                {selectedDay === getTodayDay() && getTomorrowDay() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const tomorrow = getTomorrowDay();
-                      if (tomorrow) {
-                        handleDayClick(tomorrow);
-                      }
-                    }}
-                    style={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      justifyContent: 'center',
-                      padding: '0.75rem 1.2rem',
-                      borderRadius: 999,
-                      border: 'none',
-                      background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%)',
-                      color: '#ffffff',
-                      fontWeight: 700,
-                      fontSize: '0.82rem',
-                      boxShadow: '0 8px 20px rgba(245, 158, 11, 0.5)',
-                      transition: 'all 0.3s ease',
-                      cursor: 'pointer',
-                      whiteSpace: 'nowrap',
-                      width: 'fit-content',
-                    }}
-                    onMouseEnter={(e) => {
-                      e.currentTarget.style.transform = 'scale(1.02)';
-                      e.currentTarget.style.boxShadow = '0 12px 26px rgba(245, 158, 11, 0.6), 0 0 20px rgba(245, 158, 11, 0.3)';
-                    }}
-                    onMouseLeave={(e) => {
-                      e.currentTarget.style.transform = 'scale(1)';
-                      e.currentTarget.style.boxShadow = '0 8px 20px rgba(245, 158, 11, 0.5)';
-                    }}
-                  >
-                    ➡️ Next Day ({getTomorrowDay()})
-                  </button>
-                )}
+              <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', marginLeft: 'auto' }}>
+                {/* Previous Day Button - Date-based */}
+                {selectedDate && (() => {
+                  const prevDate = getPreviousScheduledDate();
+                  if (!prevDate) return null;
+                  const prevDay = formatDateForDisplay(prevDate);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDayClick(prevDay, prevDate);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.75rem 1.2rem',
+                        borderRadius: 999,
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #6b7280 0%, #9ca3af 50%, #d1d5db 100%)',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        boxShadow: '0 8px 20px rgba(107, 114, 128, 0.5)',
+                        transition: 'all 0.3s ease',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        width: 'fit-content',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.02)';
+                        e.currentTarget.style.boxShadow = '0 12px 26px rgba(107, 114, 128, 0.6), 0 0 20px rgba(107, 114, 128, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 8px 20px rgba(107, 114, 128, 0.5)';
+                      }}
+                    >
+                      ⬅️ Previous Day ({prevDay})
+                    </button>
+                  );
+                })()}
+                
+                {/* Next Day Button - Date-based */}
+                {selectedDate && (() => {
+                  const nextDate = getNextScheduledDate();
+                  if (!nextDate) return null;
+                  const nextDay = formatDateForDisplay(nextDate);
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleDayClick(nextDay, nextDate);
+                      }}
+                      style={{
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '0.75rem 1.2rem',
+                        borderRadius: 999,
+                        border: 'none',
+                        background: 'linear-gradient(135deg, #f59e0b 0%, #fbbf24 50%, #fcd34d 100%)',
+                        color: '#ffffff',
+                        fontWeight: 700,
+                        fontSize: '0.82rem',
+                        boxShadow: '0 8px 20px rgba(245, 158, 11, 0.5)',
+                        transition: 'all 0.3s ease',
+                        cursor: 'pointer',
+                        whiteSpace: 'nowrap',
+                        width: 'fit-content',
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'scale(1.02)';
+                        e.currentTarget.style.boxShadow = '0 12px 26px rgba(245, 158, 11, 0.6), 0 0 20px rgba(245, 158, 11, 0.3)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'scale(1)';
+                        e.currentTarget.style.boxShadow = '0 8px 20px rgba(245, 158, 11, 0.5)';
+                      }}
+                    >
+                      ➡️ Next Day ({nextDay})
+                    </button>
+                  );
+                })()}
                 
                 <div style={{ textAlign: 'right' }}>
                   <div style={{ fontSize: '0.7rem', color: '#b0b0b0' }}>Truck No:</div>
@@ -1604,117 +1750,95 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
               </div>
             </div>
 
-              {/* Location Buttons - Show all locations for selected day from temp storage */}
-              {/* Always check refs first for mobile compatibility - render independently of panel state */}
+              {/* Route Schedule Information - Show routes for selected day with schedule info */}
               {(() => {
-                // Always prioritize refs on mobile for immediate state access
                 const currentDay = selectedDayRef.current || selectedDay;
-                const currentLocations = tempStorageRef.current.get(currentDay || '') || tempStorage.get(currentDay || '') || dayLocationsRef.current || dayLocations;
+                if (!currentDay) return null;
                 
-                if (!currentDay || !currentLocations || currentLocations.length === 0) {
-                  return null;
-                }
+                const daySchedules = getSchedulesForDay(currentDay);
+                if (daySchedules.length === 0) return null;
                 
                 return (
-                <div
-                  style={{
-                    marginTop: '0.75rem',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '0.5rem',
-                  }}
-                >
-                  <div style={{ fontSize: '0.75rem', color: '#b0b0b0', marginBottom: '0.25rem' }}>
-                    Locations for {currentDay}:
-            </div>
-                  {currentLocations.map((location, index) => {
-                    // Use street_id if available, otherwise use street name
-                    const streetDisplay = location.streetId || location.street || '';
-                    const displayText = streetDisplay
-                      ? `${streetDisplay} / ${location.barangay}` 
-                      : location.barangay;
-                    
-                    return (
-                      <div
-                        key={index}
-                        style={{
-                          display: 'flex',
-                          gap: '0.5rem',
-                          alignItems: 'center',
-                        }}
-                      >
-                <button
-                  type="button"
-                          onClick={() => handleLocationSelect(location)}
+                  <div
+                    style={{
+                      marginTop: '0.75rem',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      gap: '0.5rem',
+                    }}
+                  >
+                    <div style={{ fontSize: '0.75rem', color: '#b0b0b0', marginBottom: '0.25rem' }}>
+                      Routes for {currentDay}:
+                    </div>
+                    {daySchedules.map((schedule, index) => {
+                      const streetName = Array.isArray(schedule.street_name) 
+                        ? schedule.street_name[0] 
+                        : schedule.street_name || '';
+                      const barangayName = Array.isArray(schedule.barangay_name) 
+                        ? schedule.barangay_name[0] 
+                        : schedule.barangay_name || '';
+                      const routeName = barangayName + (streetName ? ` - ${streetName}` : '');
+                      const collectionTime = schedule.collection_time || '08:00';
+                      
+                      // Format time to 12-hour format
+                      const formatTime = (time24: string) => {
+                        if (!time24) return '08:00';
+                        const [hours, minutes] = time24.split(':');
+                        const hour = parseInt(hours, 10);
+                        const ampm = hour >= 12 ? 'PM' : 'AM';
+                        const hour12 = hour % 12 || 12;
+                        return `${hour12}:${minutes} ${ampm}`;
+                      };
+                      
+                      // Get first location for this schedule to use for handleLocationSelect
+                      const currentLocations = tempStorageRef.current.get(currentDay || '') || tempStorage.get(currentDay || '') || dayLocationsRef.current || dayLocations;
+                      const scheduleLocation = currentLocations.find(loc => loc.scheduleId === schedule.id);
+                      
+                      return (
+                        <div
+                          key={schedule.id || index}
                           style={{
-                            flex: 1,
                             padding: '0.75rem 1rem',
                             borderRadius: 12,
                             border: '2px solid #3b82f6',
                             background: '#242424',
-                            color: '#3b82f6',
-                            fontWeight: 600,
-                            fontSize: '0.875rem',
+                            color: '#ffffff',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.5rem',
                             cursor: 'pointer',
                             transition: 'all 0.2s ease',
-                            textAlign: 'left',
-                            boxShadow: '0 2px 4px rgba(99, 102, 241, 0.1)',
+                          }}
+                          onClick={() => {
+                            if (scheduleLocation) {
+                              handleLocationSelect(scheduleLocation);
+                            }
                           }}
                           onMouseEnter={(e) => {
-                            e.currentTarget.style.background = '#3b82f6';
-                            e.currentTarget.style.color = '#ffffff';
-                            e.currentTarget.style.transform = 'scale(1.02)';
-                            e.currentTarget.style.boxShadow = '0 4px 12px rgba(59, 130, 246, 0.5), 0 0 20px rgba(59, 130, 246, 0.3)';
+                            e.currentTarget.style.background = '#2a2a2a';
+                            e.currentTarget.style.borderColor = '#60a5fa';
+                            e.currentTarget.style.transform = 'scale(1.01)';
                           }}
                           onMouseLeave={(e) => {
                             e.currentTarget.style.background = '#242424';
-                            e.currentTarget.style.color = '#3b82f6';
+                            e.currentTarget.style.borderColor = '#3b82f6';
                             e.currentTarget.style.transform = 'scale(1)';
-                            e.currentTarget.style.boxShadow = '0 2px 4px rgba(59, 130, 246, 0.2)';
                           }}
                         >
-                          {displayText}
-                        </button>
-                        {/* DONE button only shows after stopping collection */}
-                        {hasStoppedCollecting && (
-                          <button
-                            type="button"
-                            onClick={() => handleLocationDone(location)}
-                            style={{
-                              padding: '0.75rem 1.25rem',
-                              borderRadius: 12,
-                              border: '2px solid #22c55e',
-                              background: '#22c55e',
-                              color: 'white',
-                              fontWeight: 700,
-                              fontSize: '0.875rem',
-                              cursor: 'pointer',
-                              transition: 'all 0.2s ease',
-                              whiteSpace: 'nowrap',
-                              boxShadow: '0 2px 4px rgba(34, 197, 94, 0.3)',
-                            }}
-                            onMouseEnter={(e) => {
-                              e.currentTarget.style.background = '#15803d';
-                              e.currentTarget.style.borderColor = '#16a34a';
-                              e.currentTarget.style.transform = 'scale(1.05)';
-                              e.currentTarget.style.boxShadow = '0 4px 8px rgba(34, 197, 94, 0.4)';
-                            }}
-                            onMouseLeave={(e) => {
-                              e.currentTarget.style.background = '#22c55e';
-                              e.currentTarget.style.borderColor = '#22c55e';
-                              e.currentTarget.style.transform = 'scale(1)';
-                              e.currentTarget.style.boxShadow = '0 2px 4px rgba(34, 197, 94, 0.3)';
-                            }}
-                          >
-                            DONE
-                          </button>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
+                          <div style={{ fontSize: '0.9rem', fontWeight: 600, color: '#ffffff' }}>
+                            {routeName}
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.8rem', color: '#b0b0b0' }}>
+                            <span>⏰ {formatTime(collectionTime)}</span>
+                            <span>📅 {schedule.days?.join(', ') || ''}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
                 );
               })()}
+              
 
               {/* Schedule Location Display */}
               {selectedSchedule && (!selectedDay || dayLocations.length === 0) && (
@@ -1763,45 +1887,6 @@ const CollectorHomePage: React.FC<CollectorHomePageProps> = ({ onStartCollecting
                 </div>
               )}
 
-              <button
-                type="button"
-                onClick={() => setShowSchedulePanel(!showSchedulePanel)}
-                  style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  padding: '0.75rem 1.2rem',
-                    borderRadius: 999,
-                    border: 'none',
-                  background: showSchedulePanel
-                    ? 'linear-gradient(135deg, #3b82f6 0%, #60a5fa 50%, #3b82f6 100%)'
-                    : 'linear-gradient(135deg, #2563eb 0%, #3b82f6 50%, #60a5fa 100%)',
-                    color: '#ffffff',
-                  fontWeight: 700,
-                  fontSize: '0.82rem',
-                  boxShadow: showSchedulePanel
-                    ? '0 12px 26px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)'
-                    : '0 8px 20px rgba(37, 99, 235, 0.5)',
-                  transition: 'all 0.3s ease',
-                    cursor: 'pointer',
-                  whiteSpace: 'nowrap',
-                  width: 'fit-content',
-                  }}
-                  onMouseEnter={(e) => {
-                  if (!showSchedulePanel) {
-                    e.currentTarget.style.transform = 'scale(1.02)';
-                    e.currentTarget.style.boxShadow = '0 12px 26px rgba(59, 130, 246, 0.6), 0 0 20px rgba(59, 130, 246, 0.3)';
-                  }
-                  }}
-                  onMouseLeave={(e) => {
-                  if (!showSchedulePanel) {
-                    e.currentTarget.style.transform = 'scale(1)';
-                    e.currentTarget.style.boxShadow = '0 8px 20px rgba(99, 102, 241, 0.4)';
-                  }
-                  }}
-                >
-                📅 Schedule
-                </button>
             </div>
 
             {/* Schedule Panel */}

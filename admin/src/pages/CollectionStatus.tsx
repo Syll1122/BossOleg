@@ -5,13 +5,16 @@ import './CollectionStatus.css';
 
 interface CollectionStatus {
   id: string;
+  scheduleId: string;
   collectorId: string;
   collectorName: string;
-  truckNo: string;
-  street: string;
-  barangay: string;
-  status: 'done' | 'skipped' | 'collected';
+  streetName: string;
+  streetId?: string | null;
+  barangayName: string;
+  status: 'pending' | 'collected' | 'skipped' | 'missed';
   collectionDate: string;
+  markedAt?: string | null;
+  markedBy?: string | null;
   updatedAt: string;
 }
 
@@ -22,7 +25,7 @@ export default function CollectionStatus() {
     start: new Date().toISOString().split('T')[0],
     end: new Date().toISOString().split('T')[0]
   });
-  const [filter, setFilter] = useState<'all' | 'done' | 'skipped' | 'collected'>('all');
+  const [filter, setFilter] = useState<'all' | 'pending' | 'collected' | 'skipped' | 'missed'>('all');
 
   useEffect(() => {
     loadCollectionStatuses();
@@ -74,11 +77,11 @@ export default function CollectionStatus() {
   const generateReport = () => {
     const reportData = statuses.map(s => ({
       'Collector': s.collectorName,
-      'Truck No': s.truckNo,
-      'Street': s.street,
-      'Barangay': s.barangay,
+      'Street': s.streetName,
+      'Barangay': s.barangayName,
       'Status': s.status,
       'Collection Date': s.collectionDate,
+      'Marked At': s.markedAt ? new Date(s.markedAt).toLocaleString() : 'N/A',
       'Updated At': new Date(s.updatedAt).toLocaleString()
     }));
 
@@ -101,9 +104,10 @@ export default function CollectionStatus() {
 
   // Calculate summary statistics
   const total = statuses.length;
-  const done = statuses.filter(s => s.status === 'done').length;
-  const skipped = statuses.filter(s => s.status === 'skipped').length;
+  const pending = statuses.filter(s => s.status === 'pending').length;
   const collected = statuses.filter(s => s.status === 'collected').length;
+  const skipped = statuses.filter(s => s.status === 'skipped').length;
+  const missed = statuses.filter(s => s.status === 'missed').length;
 
   if (loading) {
     return <div className="loading">Loading collection statuses...</div>;
@@ -142,10 +146,16 @@ export default function CollectionStatus() {
               All ({total})
             </button>
             <button
-              className={`filter-btn ${filter === 'done' ? 'active' : ''}`}
-              onClick={() => setFilter('done')}
+              className={`filter-btn ${filter === 'pending' ? 'active' : ''}`}
+              onClick={() => setFilter('pending')}
             >
-              Done ({done})
+              Pending ({pending})
+            </button>
+            <button
+              className={`filter-btn ${filter === 'collected' ? 'active' : ''}`}
+              onClick={() => setFilter('collected')}
+            >
+              Collected ({collected})
             </button>
             <button
               className={`filter-btn ${filter === 'skipped' ? 'active' : ''}`}
@@ -154,10 +164,10 @@ export default function CollectionStatus() {
               Skipped ({skipped})
             </button>
             <button
-              className={`filter-btn ${filter === 'collected' ? 'active' : ''}`}
-              onClick={() => setFilter('collected')}
+              className={`filter-btn ${filter === 'missed' ? 'active' : ''}`}
+              onClick={() => setFilter('missed')}
             >
-              Collected ({collected})
+              Missed ({missed})
             </button>
           </div>
           <button className="btn btn-primary" onClick={loadCollectionStatuses}>
@@ -174,17 +184,21 @@ export default function CollectionStatus() {
           <div className="summary-value">{total}</div>
           <div className="summary-label">Total Records</div>
         </div>
+        <div className="summary-card info">
+          <div className="summary-value">{pending}</div>
+          <div className="summary-label">Pending</div>
+        </div>
         <div className="summary-card success">
-          <div className="summary-value">{done}</div>
-          <div className="summary-label">Done</div>
+          <div className="summary-value">{collected}</div>
+          <div className="summary-label">Collected</div>
         </div>
         <div className="summary-card warning">
           <div className="summary-value">{skipped}</div>
           <div className="summary-label">Skipped</div>
         </div>
-        <div className="summary-card info">
-          <div className="summary-value">{collected}</div>
-          <div className="summary-label">Collected</div>
+        <div className="summary-card error">
+          <div className="summary-value">{missed}</div>
+          <div className="summary-label">Missed</div>
         </div>
       </div>
 
@@ -198,11 +212,11 @@ export default function CollectionStatus() {
             <thead>
               <tr>
                 <th>Collector</th>
-                <th>Truck No</th>
                 <th>Street</th>
                 <th>Barangay</th>
                 <th>Status</th>
                 <th>Collection Date</th>
+                <th>Marked At</th>
                 <th>Updated At</th>
               </tr>
             </thead>
@@ -210,18 +224,19 @@ export default function CollectionStatus() {
               {statuses.map((status) => (
                 <tr key={status.id}>
                   <td>{status.collectorName}</td>
-                  <td>{status.truckNo}</td>
-                  <td>{status.street}</td>
-                  <td>{status.barangay}</td>
+                  <td>{status.streetName}</td>
+                  <td>{status.barangayName}</td>
                   <td>
                     <span className={`badge ${
-                      status.status === 'done' ? 'badge-success' :
-                      status.status === 'collected' ? 'badge-info' : 'badge-warning'
+                      status.status === 'collected' ? 'badge-success' :
+                      status.status === 'pending' ? 'badge-info' :
+                      status.status === 'missed' ? 'badge-error' : 'badge-warning'
                     }`}>
                       {status.status}
                     </span>
                   </td>
                   <td>{new Date(status.collectionDate).toLocaleDateString()}</td>
+                  <td>{status.markedAt ? new Date(status.markedAt).toLocaleString() : 'N/A'}</td>
                   <td>{new Date(status.updatedAt).toLocaleString()}</td>
                 </tr>
               ))}

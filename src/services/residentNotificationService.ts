@@ -4,6 +4,7 @@
 import { databaseService } from './database-supabase';
 import { getCurrentUserId } from '../utils/auth';
 import { calculateDistance, isValidCoordinate } from '../utils/coordinates';
+import { supabase } from './supabase';
 
 // Schedule locations (matching collector schedule)
 const SCHEDULE_LOCATIONS = [
@@ -72,7 +73,7 @@ function incrementScheduleNotificationCount(userId: string): void {
 }
 
 /**
- * Notify resident about today's collection schedule
+ * Notify resident about today's collection schedule (responsive based on actual schedules)
  */
 export async function notifyTodaySchedule(userId: string): Promise<void> {
   try {
@@ -87,13 +88,40 @@ export async function notifyTodaySchedule(userId: string): Promise<void> {
       return;
     }
 
-    // Create schedule notification
-    const scheduleList = SCHEDULE_LOCATIONS.map(loc => loc.name).join(', ');
+    // Get today's schedules from database
+    const today = new Date();
+    const dayAbbr = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][today.getDay()];
+    
+    const { data: todaySchedules, error } = await supabase
+      .from('collection_schedules')
+      .select('*');
+    
+    if (error) {
+      console.error('Error fetching schedules:', error);
+      return;
+    }
+
+    // Filter schedules for today and user's barangay
+    const relevantSchedules = (todaySchedules || []).filter((s: any) => {
+      const barangayName = Array.isArray(s.barangay_name) ? s.barangay_name[0] : s.barangay_name;
+      return s.days.includes(dayAbbr) && barangayName === account.barangay;
+    });
+
+    if (relevantSchedules.length === 0) {
+      return; // No schedules for today
+    }
+
+    // Create schedule list with times
+    const scheduleList = relevantSchedules.map((s: any) => {
+      const streetName = Array.isArray(s.street_name) ? s.street_name[0] : s.street_name;
+      const time = s.collection_time || '08:00';
+      return `${streetName || 'Route'} (${time})`;
+    }).join(', ');
     
     await databaseService.createNotification({
       userId,
       title: '📅 Today\'s Collection Schedule',
-      message: `Collection schedule for today: ${scheduleList}. Trucks will be in these areas.`,
+      message: `Collection scheduled for today: ${scheduleList}. Please prepare your waste.`,
       type: 'info',
       read: false,
       link: '/resident/truck',
